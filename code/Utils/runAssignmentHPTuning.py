@@ -87,7 +87,7 @@ def main():
     print("RUNNING HOUSEHOLD ASSIGNMENT HYPERPARAMETER TUNING FOR ALL AREAS")
     print("="*80)
     print(f"Processing area codes: {', '.join(AREA_CODES)}")
-    print(f"Utils directory: {current_dir}")
+    print(f"utils directory: {current_dir}")
     print(f"Code directory: {code_dir}")
     print("\nThis script will:")
     print("  • Run hyperparameter tuning for household assignment models")
