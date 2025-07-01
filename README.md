@@ -20,7 +20,7 @@ Synthetic Population for Household Generation using GNN/
 │   ├── assignHouseholds.py         # Household assignment logic
 │   ├── main.py                     # Main menu interface
 │   ├── evaluation.py               # Model evaluation utilities
-│   ├── Utils/                      # Utility scripts directory
+│   ├── utils/                      # Utility scripts directory
 │   │   ├── createGlossary.py       # Create master glossary file
 │   │   ├── plotConvergencePerformance.py  # Generate plots and analysis
 │   │   ├── runAssignmentHPTuning.py       # Batch hyperparameter tuning
@@ -41,7 +41,7 @@ Synthetic Population for Household Generation using GNN/
   - `assignHouseholds.py`: Contains logic for household assignment and hyperparameter optimization
   - `main.py`: Interactive menu system for running all components
   - `evaluation.py`: Model evaluation and comparison utilities
-  - `Utils/`: Utility scripts for batch processing, analysis, and visualization
+  - `utils/`: Utility scripts for batch processing, analysis, and visualization
     - `createGlossary.py`: Creates master glossary files from crosstables
     - `plotConvergencePerformance.py`: Generates convergence and performance plots
     - `runAssignmentHPTuning.py`: Batch hyperparameter tuning for all areas

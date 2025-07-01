@@ -64,7 +64,7 @@ def main():
     print("RUNNING MULTIPLE AREA CODES FOR GNN POPULATION SYNTHESIS")
     print("="*80)
     print(f"Processing area codes: {', '.join(AREA_CODES)}")
-    print(f"Utils directory: {current_dir}")
+    print(f"utils directory: {current_dir}")
     print(f"Code directory: {code_dir}")
     
     # Track results
@@ -100,7 +100,7 @@ def main():
     print("GENERATING CONVERGENCE AND PERFORMANCE PLOTS")
     print(f"{'='*80}")
     
-    # Run plotting script from Utils directory
+    # Run plotting script from utils directory
     plot_cmd = [sys.executable, 'plotConvergencePerformance.py']
     plot_success = run_command(
         plot_cmd, 

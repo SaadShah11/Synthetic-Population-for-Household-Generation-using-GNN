@@ -42,40 +42,40 @@ SCRIPT_OPTIONS = {
     },
     '4': {
         'name': 'Create Master Glossary',
-        'script': 'Utils/createGlossary.py',
+        'script': 'utils/createGlossary.py',
         'description': 'Combine all crosstable glossaries into a single master file',
         'requires_area': True
     },
     '5': {
         'name': 'Persons Convergence & Performance Plots',
-        'script': 'Utils/plotConvergencePerformance.py',
+        'script': 'utils/plotConvergencePerformance.py',
         'description': 'Generate convergence and performance plots for individuals/persons only',
         'requires_area': False,
         'plot_type': 'individuals'
     },
     '6': {
         'name': 'Households Convergence & Performance Plots', 
-        'script': 'Utils/plotConvergencePerformance.py',
+        'script': 'utils/plotConvergencePerformance.py',
         'description': 'Generate convergence and performance plots for households only',
         'requires_area': False,
         'plot_type': 'households'
     },
     '7': {
         'name': 'All Convergence & Performance Plots',
-        'script': 'Utils/plotConvergencePerformance.py',
+        'script': 'utils/plotConvergencePerformance.py',
         'description': 'Generate convergence and performance plots for both persons and households',
         'requires_area': False,
         'plot_type': 'both'
     },
     '8': {
         'name': 'Run Multiple Areas (Batch)',
-        'script': 'Utils/runMultipleAreas.py',
+        'script': 'utils/runMultipleAreas.py',
         'description': 'Run individuals and households generation for multiple predefined areas',
         'requires_area': False
     },
     '9': {
         'name': 'Run Assignment HP Tuning (All Areas)',
-        'script': 'Utils/runAssignmentHPTuning.py',
+        'script': 'utils/runAssignmentHPTuning.py',
         'description': 'Run household assignment hyperparameter tuning for all 17 areas',
         'requires_area': False
     },
