@@ -13,11 +13,18 @@ This repository contains the implementation of a Graph Neural Network (GNN) base
 ## Project Structure
 
 ```
-SP_GNN/
+Synthetic Population for Household Generation using GNN/
 ├── code/
-│   ├── generatedHouseholds.py      # Household generation logic
-│   ├── generatedIndividuals.py     # Individual generation logic
+│   ├── generateHouseholds.py       # Household generation logic
+│   ├── generateIndividuals.py      # Individual generation logic
 │   ├── assignHouseholds.py         # Household assignment logic
+│   ├── main.py                     # Main menu interface
+│   ├── evaluation.py               # Model evaluation utilities
+│   ├── Utils/                      # Utility scripts directory
+│   │   ├── createGlossary.py       # Create master glossary file
+│   │   ├── plotConvergencePerformance.py  # Generate plots and analysis
+│   │   ├── runAssignmentHPTuning.py       # Batch hyperparameter tuning
+│   │   └── runMultipleAreas.py            # Batch processing utility
 │   └── outputs/                    # Generated outputs directory
 ├── data/
 │   ├── raw-data/                   # Original input data
@@ -29,9 +36,16 @@ SP_GNN/
 ## Directory Description
 
 - `code/`: Contains the main implementation files for the GNN-based synthetic population generation
-  - `generatedHouseholds.py`: Implements the household generation algorithms
-  - `generatedIndividuals.py`: Implements the individual population generation
+  - `generateHouseholds.py`: Implements the household generation algorithms
+  - `generateIndividuals.py`: Implements the individual population generation
   - `assignHouseholds.py`: Contains logic for household assignment and hyperparameter optimization
+  - `main.py`: Interactive menu system for running all components
+  - `evaluation.py`: Model evaluation and comparison utilities
+  - `Utils/`: Utility scripts for batch processing, analysis, and visualization
+    - `createGlossary.py`: Creates master glossary files from crosstables
+    - `plotConvergencePerformance.py`: Generates convergence and performance plots
+    - `runAssignmentHPTuning.py`: Batch hyperparameter tuning for all areas
+    - `runMultipleAreas.py`: Batch processing for multiple geographical areas
   - `outputs/`: Stores the generated outputs and results
 
 - `data/`: Houses all data-related files and scripts
@@ -62,6 +76,16 @@ If you want to use pytorch with CPU then run below command:
    ```
    pip install torch==2.7.0
    ```
-4 - Prepare your data in the `data/raw-data/` directory
+4 - Raw and Preprocessed data is in the `data/` directory
 
-5 - Use the scripts in the `code/` directory to run the synthetic population generation
+5 - Run the main menu interface to access all functionality:
+   ```
+   cd code
+   python main.py
+   ```
+   
+   The main menu provides access to:
+   - Individual, household generation and household assignments for specific areas
+   - Batch processing for multiple areas
+   - Convergence and performance analysis
+   - Model evaluation and comparison utilities
