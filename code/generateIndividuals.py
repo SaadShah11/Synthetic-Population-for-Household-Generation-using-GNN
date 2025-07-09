@@ -179,9 +179,11 @@ sex_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/indivi
 ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Ethnicity.csv'))
 religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Religion.csv'))
 marital_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Marital.csv'))
+qualification_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Qualification.csv'))
 ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge.csv'))
 religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge.csv'))
 marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified.csv'))
+qualification_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/QualificationBySexByAgeModified.csv'))
 # ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge_sorted.csv'))
 # religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge_sorted.csv'))
 # marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified_sorted.csv'))
@@ -196,9 +198,11 @@ sex_df = sex_df[sex_df['geography code'].isin(oxford_areas)]
 ethnicity_df = ethnicity_df[ethnicity_df['geography code'].isin(oxford_areas)]
 religion_df = religion_df[religion_df['geography code'].isin(oxford_areas)]
 marital_df = marital_df[marital_df['geography code'].isin(oxford_areas)]
+qualification_df = qualification_df[qualification_df['geography code'].isin(oxford_areas)]
 ethnic_by_sex_by_age_df = ethnic_by_sex_by_age_df[ethnic_by_sex_by_age_df['geography code'].isin(oxford_areas)]
 religion_by_sex_by_age_df = religion_by_sex_by_age_df[religion_by_sex_by_age_df['geography code'].isin(oxford_areas)]
 marital_by_sex_by_age_df = marital_by_sex_by_age_df[marital_by_sex_by_age_df['geography code'].isin(oxford_areas)]
+qualification_by_sex_by_age_df = qualification_by_sex_by_age_df[qualification_by_sex_by_age_df['geography code'].isin(oxford_areas)]
 
 # Define the age groups, sex categories, and ethnicity categories
 age_groups = ['0_4', '5_7', '8_9', '10_14', '15', '16_17', '18_19', '20_24', '25_29', '30_34', '35_39', '40_44', '45_49', '50_54', '55_59', '60_64', '65_69', '70_74', '75_79', '80_84', '85+']
@@ -206,6 +210,7 @@ sex_categories = ['M', 'F']
 ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B2', 'B3', 'O1', 'O2']
 religion_categories = ['C','B','H','J','M','S','O','N','NS']
 marital_categories = ['Single','Married','Partner','Separated','Divorced','Widowed']
+qualification_categories = ['L0', 'L1', 'L2', 'LA', 'L3', 'L4', 'LO']
 
 # Encode the categories to indices
 age_map = {category: i for i, category in enumerate(age_groups)}
@@ -213,6 +218,7 @@ sex_map = {category: i for i, category in enumerate(sex_categories)}
 ethnicity_map = {category: i for i, category in enumerate(ethnicity_categories)}
 religion_map = {category: i for i, category in enumerate(religion_categories)}
 marital_map = {category: i for i, category in enumerate(marital_categories)}
+qualification_map = {category: i for i, category in enumerate(qualification_categories)}
 
 # Total number of persons from the total column
 num_persons = int(age_df['total'].sum())
@@ -237,8 +243,11 @@ religion_nodes = torch.tensor([[religion_map[religion]] for religion in religion
 # Create nodes for marital categories
 marital_nodes = torch.tensor([[marital_map[marital]] for marital in marital_categories], dtype=torch.float).to(device)
 
+# Create nodes for qualification categories
+qualification_nodes = torch.tensor([[qualification_map[qualification]] for qualification in qualification_categories], dtype=torch.float).to(device)
+
 # Combine all nodes into a single tensor
-node_features = torch.cat([person_nodes, age_nodes, sex_nodes, ethnicity_nodes, religion_nodes, marital_nodes], dim=0).to(device)
+node_features = torch.cat([person_nodes, age_nodes, sex_nodes, ethnicity_nodes, religion_nodes, marital_nodes, qualification_nodes], dim=0).to(device)
 
 # Calculate the distribution for age categories
 age_probabilities = age_df.drop(columns = ["geography code", "total"]) / num_persons
@@ -246,6 +255,7 @@ sex_probabilities = sex_df.drop(columns = ["geography code", "total"]) / num_per
 ethnicity_probabilities = ethnicity_df.drop(columns = ["geography code", "total"]) / num_persons
 religion_probabilities = religion_df.drop(columns = ["geography code", "total"]) / num_persons
 marital_probabilities = marital_df.drop(columns = ["geography code", "total"]) / num_persons
+qualification_probabilities = qualification_df.drop(columns = ["geography code", "total"]) / num_persons
 
 # New function to generate edge index
 def generate_edge_index(num_persons):
@@ -255,6 +265,7 @@ def generate_edge_index(num_persons):
     ethnicity_start_idx = sex_start_idx + len(sex_categories)
     religion_start_idx = ethnicity_start_idx + len(ethnicity_categories)
     marital_start_idx = religion_start_idx + len(religion_categories)
+    qualification_start_idx = marital_start_idx + len(marital_categories)
 
     # Convert the probability series to a list of probabilities for sampling
     age_prob_list = age_probabilities.values.tolist()[0]
@@ -262,6 +273,7 @@ def generate_edge_index(num_persons):
     ethnicity_prob_list = ethnicity_probabilities.values.tolist()[0]
     religion_prob_list = religion_probabilities.values.tolist()[0]
     marital_prob_list = marital_probabilities.values.tolist()[0]
+    qualification_prob_list = qualification_probabilities.values.tolist()[0]
 
     for i in range(num_persons):
         # Sample the categories using weighted random sampling
@@ -269,7 +281,8 @@ def generate_edge_index(num_persons):
         sex_category = random.choices(range(sex_start_idx, ethnicity_start_idx), weights=sex_prob_list, k=1)[0]
         ethnicity_category = random.choices(range(ethnicity_start_idx, religion_start_idx), weights=ethnicity_prob_list, k=1)[0]
         religion_category = random.choices(range(religion_start_idx, marital_start_idx), weights=religion_prob_list, k=1)[0]
-        marital_category = random.choices(range(marital_start_idx, marital_start_idx + len(marital_categories)), weights=marital_prob_list, k=1)[0]
+        marital_category = random.choices(range(marital_start_idx, qualification_start_idx), weights=marital_prob_list, k=1)[0]
+        qualification_category = random.choices(range(qualification_start_idx, qualification_start_idx + len(qualification_categories)), weights=qualification_prob_list, k=1)[0]
         
         # Append edges for each category
         edge_index.append([i, age_category])
@@ -277,6 +290,7 @@ def generate_edge_index(num_persons):
         edge_index.append([i, ethnicity_category])
         edge_index.append([i, religion_category])
         edge_index.append([i, marital_category])
+        edge_index.append([i, qualification_category])
 
     edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous().to(device)
     return edge_index
@@ -307,9 +321,15 @@ targets.append(
         get_target_tensors(religion_by_sex_by_age_df, sex_categories, sex_map, age_groups, age_map, religion_categories, religion_map)
     )
 )
+targets.append(
+    (
+        ('sex', 'age', 'qualification'), 
+        get_target_tensors(qualification_by_sex_by_age_df, sex_categories, sex_map, age_groups, age_map, qualification_categories, qualification_map)
+    )
+)
 
 class EnhancedGNNModelWithMLP(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, mlp_hidden_dim, out_channels_age, out_channels_sex, out_channels_ethnicity, out_channels_religion, out_channels_marital, dropout_rate=0.5):
+    def __init__(self, in_channels, hidden_channels, mlp_hidden_dim, out_channels_age, out_channels_sex, out_channels_ethnicity, out_channels_religion, out_channels_marital, out_channels_qualification, dropout_rate=0.5):
         super(EnhancedGNNModelWithMLP, self).__init__()
         
         # GraphSAGE layers
@@ -357,6 +377,12 @@ class EnhancedGNNModelWithMLP(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(mlp_hidden_dim, out_channels_marital)
         )
+        
+        self.mlp_qualification = torch.nn.Sequential(
+            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(mlp_hidden_dim, out_channels_qualification)
+        )
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -388,8 +414,9 @@ class EnhancedGNNModelWithMLP(torch.nn.Module):
         ethnicity_out = self.mlp_ethnicity(x)
         religion_out = self.mlp_religion(x)
         marital_out = self.mlp_marital(x)
+        qualification_out = self.mlp_qualification(x)
         
-        return age_out, sex_out, ethnicity_out, religion_out, marital_out
+        return age_out, sex_out, ethnicity_out, religion_out, marital_out, qualification_out
 
 # Custom loss function
 def custom_loss_function(first_out, second_out, third_out, y_first, y_second, y_third):
@@ -493,7 +520,8 @@ def calculate_distribution_task_accuracy(pred_1, pred_2, pred_3, target_combinat
         'age': len(age_groups), 
         'ethnicity': len(ethnicity_categories),
         'religion': len(religion_categories),
-        'marital': len(marital_categories)
+        'marital': len(marital_categories),
+        'qualification': len(qualification_categories)
     }
     
     size_1 = category_sizes[categories_1]
@@ -518,7 +546,8 @@ def calculate_distribution_task_accuracy(pred_1, pred_2, pred_3, target_combinat
             'age': age_groups, 
             'ethnicity': ethnicity_categories,
             'religion': religion_categories,
-            'marital': marital_categories
+            'marital': marital_categories,
+            'qualification': qualification_categories
         }
         
         cats_1 = category_map[categories_1]
@@ -561,7 +590,8 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         out_channels_sex=len(sex_categories),
         out_channels_ethnicity=len(ethnicity_categories),
         out_channels_religion=len(religion_categories),
-        out_channels_marital=len(marital_categories)
+        out_channels_marital=len(marital_categories),
+        out_channels_qualification=len(qualification_categories)
     ).to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -593,7 +623,7 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         optimizer.zero_grad()  # Clear gradients
 
         # Forward pass
-        age_out, sex_out, ethnicity_out, religion_out, marital_out = model(data)
+        age_out, sex_out, ethnicity_out, religion_out, marital_out, qualification_out = model(data)
 
         out = {}
         out['age'] = age_out[:num_persons]  # Only take person nodes' outputs
@@ -601,6 +631,7 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         out['ethnicity'] = ethnicity_out[:num_persons]
         out['religion'] = religion_out[:num_persons]
         out['marital'] = marital_out[:num_persons]
+        out['qualification'] = qualification_out[:num_persons]
 
         loss = 0
         
@@ -626,8 +657,10 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                     actual_crosstable = ethnic_by_sex_by_age_df
                 elif i == 1:  # sex-age-marital  
                     actual_crosstable = marital_by_sex_by_age_df
-                else:  # sex-age-religion
+                elif i == 2:  # sex-age-religion
                     actual_crosstable = religion_by_sex_by_age_df
+                else:  # sex-age-qualification
+                    actual_crosstable = qualification_by_sex_by_age_df
                 
                 task_distribution_accuracy = calculate_distribution_task_accuracy(
                     pred_1, pred_2, pred_3, targets[i][0], actual_crosstable
@@ -679,7 +712,7 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
     # Evaluate accuracy after training
     model.eval()
     with torch.no_grad():
-        age_out, sex_out, ethnicity_out, religion_out, marital_out = model(data)
+        age_out, sex_out, ethnicity_out, religion_out, marital_out, qualification_out = model(data)
         
         out = {}
         out['age'] = age_out[:num_persons]
@@ -687,12 +720,14 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         out['ethnicity'] = ethnicity_out[:num_persons]
         out['religion'] = religion_out[:num_persons]
         out['marital'] = marital_out[:num_persons]
+        out['qualification'] = qualification_out[:num_persons]
         
         age_pred = out['age'].argmax(dim=1)
         sex_pred = out['sex'].argmax(dim=1)
         ethnicity_pred = out['ethnicity'].argmax(dim=1)
         religion_pred = out['religion'].argmax(dim=1)
         marital_pred = out['marital'].argmax(dim=1)
+        qualification_pred = out['qualification'].argmax(dim=1)
 
         # Calculate distribution-based accuracy across all tasks
         net_accuracy = 0
@@ -708,8 +743,10 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 actual_crosstable = ethnic_by_sex_by_age_df
             elif i == 1:  # sex-age-marital  
                 actual_crosstable = marital_by_sex_by_age_df
-            else:  # sex-age-religion
+            elif i == 2:  # sex-age-religion
                 actual_crosstable = religion_by_sex_by_age_df
+            else:  # sex-age-qualification
+                actual_crosstable = qualification_by_sex_by_age_df
             
             # Calculate distribution-based accuracy (R²)
             task_distribution_accuracy = calculate_distribution_task_accuracy(
@@ -735,14 +772,14 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 'model_state': best_epoch_state,
                 'loss': best_epoch_loss,
                 'accuracy': final_accuracy,
-                'predictions': (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred),
+                'predictions': (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred),
                 'lr': lr,
                 'hidden_channels': hidden_channels,
                 'convergence_data': convergence_data
             })
 
         # Return the final loss, average accuracy across epochs, final accuracies, and convergence data
-        return best_epoch_loss, average_accuracy, final_accuracy, (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred), convergence_data
+        return best_epoch_loss, average_accuracy, final_accuracy, (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred), convergence_data
 
 # Run the grid search over hyperparameters
 total_start_time = time.time()
@@ -760,26 +797,28 @@ for lr in learning_rates:
         # After training, evaluate RMSE for this run (not just best model)
         # Use the same logic as in the best model evaluation
         # Evaluate predictions for this run
-        sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred = predictions
+        sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred = predictions
         net_rmse = 0
         for i in range(len(targets)):
-            pred_1 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred][['sex','age','ethnicity','religion','marital'].index(targets[i][0][0])]
-            pred_2 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred][['sex','age','ethnicity','religion','marital'].index(targets[i][0][1])]
-            pred_3 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred][['sex','age','ethnicity','religion','marital'].index(targets[i][0][2])]
+            pred_1 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred][['sex','age','ethnicity','religion','marital','qualification'].index(targets[i][0][0])]
+            pred_2 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred][['sex','age','ethnicity','religion','marital','qualification'].index(targets[i][0][1])]
+            pred_3 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred][['sex','age','ethnicity','religion','marital','qualification'].index(targets[i][0][2])]
             if i == 0:
                 actual_crosstable = ethnic_by_sex_by_age_df
             elif i == 1:
                 actual_crosstable = marital_by_sex_by_age_df
-            else:
+            elif i == 2:
                 actual_crosstable = religion_by_sex_by_age_df
-            size_1 = len(sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else marital_categories))))
-            size_2 = len(age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else marital_categories))))
-            size_3 = len(ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (sex_categories if targets[i][0][2]=='sex' else age_groups))))
+            else:
+                actual_crosstable = qualification_by_sex_by_age_df
+            size_1 = len(sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else (marital_categories if targets[i][0][0]=='marital' else qualification_categories)))))
+            size_2 = len(age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else (marital_categories if targets[i][0][1]=='marital' else qualification_categories)))))
+            size_3 = len(ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (qualification_categories if targets[i][0][2]=='qualification' else (sex_categories if targets[i][0][2]=='sex' else age_groups)))))
             pred_counts = torch.bincount(pred_2 * (size_1 * size_3) + pred_1 * size_3 + pred_3, minlength=size_1*size_2*size_3).cpu().numpy()
             actual_counts = []
-            cats_1 = sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else marital_categories)))
-            cats_2 = age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else marital_categories)))
-            cats_3 = ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (sex_categories if targets[i][0][2]=='sex' else age_groups)))
+            cats_1 = sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else (marital_categories if targets[i][0][0]=='marital' else qualification_categories))))
+            cats_2 = age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else (marital_categories if targets[i][0][1]=='marital' else qualification_categories))))
+            cats_3 = ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (qualification_categories if targets[i][0][2]=='qualification' else (sex_categories if targets[i][0][2]=='sex' else age_groups))))
             for cat2 in cats_2:
                 for cat1 in cats_1:
                     for cat3 in cats_3:
@@ -887,17 +926,18 @@ best_config = {
 #     json.dump(best_config, f, indent=4)
 
 # Extract the best model's predictions for visualization
-sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred = best_model_info['predictions']
+sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred = best_model_info['predictions']
 
 # Create person tensor with attributes matching original format
-# Expected format: [age, sex, religion, ethnicity, marital] (5 columns)
-# Where religion is at index 2 and ethnicity is at index 3
+# Expected format: [age, sex, religion, ethnicity, marital, qualification] (6 columns)
+# Where religion is at index 2, ethnicity is at index 3, marital at 4, qualification at 5
 person_nodes_tensor = torch.stack([
-    age_pred,       # Column 0: age
-    sex_pred,       # Column 1: sex  
-    religion_pred,  # Column 2: religion
-    ethnicity_pred, # Column 3: ethnicity
-    marital_pred    # Column 4: marital
+    age_pred,           # Column 0: age
+    sex_pred,           # Column 1: sex  
+    religion_pred,      # Column 2: religion
+    ethnicity_pred,     # Column 3: ethnicity
+    marital_pred,       # Column 4: marital
+    qualification_pred  # Column 5: qualification
 ], dim=1)
 
 # Save person tensor
@@ -910,6 +950,7 @@ age_pred_names = [age_groups[i] for i in age_pred.cpu().numpy()]
 ethnicity_pred_names = [ethnicity_categories[i] for i in ethnicity_pred.cpu().numpy()]
 religion_pred_names = [religion_categories[i] for i in religion_pred.cpu().numpy()]
 marital_pred_names = [marital_categories[i] for i in marital_pred.cpu().numpy()]
+qualification_pred_names = [qualification_categories[i] for i in qualification_pred.cpu().numpy()]
 
 # Calculate actual distributions
 sex_actual = {}
@@ -917,6 +958,7 @@ age_actual = {}
 ethnicity_actual = {}
 religion_actual = {}
 marital_actual = {}
+qualification_actual = {}
 
 # Extract counts from the original data frames
 for sex in sex_categories:
@@ -934,12 +976,16 @@ for rel in religion_categories:
 for mar in marital_categories:
     marital_actual[mar] = marital_df[mar].iloc[0]
 
+for qual in qualification_categories:
+    qualification_actual[qual] = qualification_df[qual].iloc[0]
+
 # Calculate predicted distributions
 sex_pred_counts = dict(Counter(sex_pred_names))
 age_pred_counts = dict(Counter(age_pred_names))
 ethnicity_pred_counts = dict(Counter(ethnicity_pred_names))
 religion_pred_counts = dict(Counter(religion_pred_names))
 marital_pred_counts = dict(Counter(marital_pred_names))
+qualification_pred_counts = dict(Counter(qualification_pred_names))
 
 # Normalize the actual distributions to match the total number of persons in predictions
 # This ensures fair comparison of relative proportions
@@ -948,6 +994,7 @@ total_actual_age = sum(age_actual.values())
 total_actual_ethnicity = sum(ethnicity_actual.values())
 total_actual_religion = sum(religion_actual.values())
 total_actual_marital = sum(marital_actual.values())
+total_actual_qualification = sum(qualification_actual.values())
 total_pred = num_persons
 
 if total_actual_sex > 0:
@@ -960,14 +1007,17 @@ if total_actual_religion > 0:
     religion_actual = {k: v * total_pred / total_actual_religion for k, v in religion_actual.items()}
 if total_actual_marital > 0:
     marital_actual = {k: v * total_pred / total_actual_marital for k, v in marital_actual.items()}
+if total_actual_qualification > 0:
+    qualification_actual = {k: v * total_pred / total_actual_qualification for k, v in qualification_actual.items()}
 
 # Create combined age-sex column names
 age_sex_combinations = [f"{age} {sex}" for age in age_groups for sex in sex_categories]
 
-# Create actual crosstables with ethnicity/religion/marital as indices and age-sex combinations as columns
+# Create actual crosstables with ethnicity/religion/marital/qualification as indices and age-sex combinations as columns
 ethnic_sex_age_actual = pd.DataFrame(0, index=ethnicity_categories, columns=age_sex_combinations)
 religion_sex_age_actual = pd.DataFrame(0, index=religion_categories, columns=age_sex_combinations)
 marital_sex_age_actual = pd.DataFrame(0, index=marital_categories, columns=age_sex_combinations)
+qualification_sex_age_actual = pd.DataFrame(0, index=qualification_categories, columns=age_sex_combinations)
 
 # Extract the actual counts from the crosstable dataframes
 for sex in sex_categories:
@@ -990,11 +1040,18 @@ for sex in sex_categories:
             original_col = f'{sex} {age} {mar}'
             if original_col in marital_by_sex_by_age_df.columns:
                 marital_sex_age_actual.loc[mar, col_name] = marital_by_sex_by_age_df[original_col].iloc[0]
+        
+        # Sum up counts for each qualification for this sex-age combination
+        for qual in qualification_categories:
+            original_col = f'{sex} {age} {qual}'
+            if original_col in qualification_by_sex_by_age_df.columns:
+                qualification_sex_age_actual.loc[qual, col_name] = qualification_by_sex_by_age_df[original_col].iloc[0]
 
 # Create predicted crosstables with the same structure
 ethnic_sex_age_pred = pd.DataFrame(0, index=ethnicity_categories, columns=age_sex_combinations)
 religion_sex_age_pred = pd.DataFrame(0, index=religion_categories, columns=age_sex_combinations)
 marital_sex_age_pred = pd.DataFrame(0, index=marital_categories, columns=age_sex_combinations)
+qualification_sex_age_pred = pd.DataFrame(0, index=qualification_categories, columns=age_sex_combinations)
 
 # Fill the predicted crosstables based on our model predictions
 for i in range(len(sex_pred_names)):
@@ -1003,11 +1060,13 @@ for i in range(len(sex_pred_names)):
     eth = ethnicity_pred_names[i]
     rel = religion_pred_names[i]
     mar = marital_pred_names[i]
+    qual = qualification_pred_names[i]
     
     col_name = f"{age} {sex}"
     ethnic_sex_age_pred.loc[eth, col_name] += 1
     religion_sex_age_pred.loc[rel, col_name] += 1
     marital_sex_age_pred.loc[mar, col_name] += 1
+    qualification_sex_age_pred.loc[qual, col_name] += 1
 
 # Plotly version of individual attribute distribution plots
 def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=False, filter_zero_bars=False, max_cols=2, save_path=None):
@@ -1478,7 +1537,8 @@ attribute_dicts = {
     'Age': (age_actual, age_pred_counts),
     'Ethnicity': (ethnicity_actual, ethnicity_pred_counts),
     'Religion': (religion_actual, religion_pred_counts),
-    'Marital Status': (marital_actual, marital_pred_counts)
+    'Marital Status': (marital_actual, marital_pred_counts),
+    'Qualification': (qualification_actual, qualification_pred_counts)
 }
 
 categories_dict = {
@@ -1486,7 +1546,8 @@ categories_dict = {
     'Age': age_groups,
     'Ethnicity': ethnicity_categories,
     'Religion': religion_categories,
-    'Marital Status': marital_categories
+    'Marital Status': marital_categories,
+    'Qualification': qualification_categories
 }
 
 # Plot individual attribute distributions
@@ -1498,7 +1559,8 @@ plotly_attribute_distributions(attribute_dicts, categories_dict, filter_zero_bar
 actual_dfs = {
     'Ethnic_Sex_Age': ethnic_sex_age_actual,
     'Religion_Sex_Age': religion_sex_age_actual,
-    'Marital_Sex_Age': marital_sex_age_actual
+    'Marital_Sex_Age': marital_sex_age_actual,
+    'Qualification_Sex_Age': qualification_sex_age_actual
 }
 
 # print("============ Actual Crosstables DF =============")
@@ -1507,7 +1569,8 @@ actual_dfs = {
 predicted_dfs = {
     'Ethnic_Sex_Age': ethnic_sex_age_pred,
     'Religion_Sex_Age': religion_sex_age_pred,
-    'Marital_Sex_Age': marital_sex_age_pred
+    'Marital_Sex_Age': marital_sex_age_pred,
+    'Qualification_Sex_Age': qualification_sex_age_pred
 }
 
 # print("============ Predicted Crosstables DF =============")
@@ -1516,7 +1579,8 @@ predicted_dfs = {
 titles = [
     'Ethnicity x Sex x Age',
     'Religion x Sex x Age',
-    'Marital Status x Sex x Age'
+    'Marital Status x Sex x Age',
+    'Qualification x Sex x Age'
 ]
 
 # Plot crosstable comparisons using the same function as in generateHouseholds.py
