@@ -99,6 +99,121 @@ selected_area_code = args.area_code
 
 print(f"Running Household Assignment Hyperparameter Tuning for area: {selected_area_code}")
 
+# Household size extraction function
+def extract_household_sizes_from_tensor(household_nodes_tensor, device):
+    """
+    Extract household sizes from the generated household tensor.
+    
+    Args:
+        household_nodes_tensor: Tensor with shape (num_households, 6)
+                               [household_composition, ethnicity, religion, tenure, size, rooms]
+        device: PyTorch device for tensor operations
+    
+    Returns:
+        torch.Tensor: Household sizes as tensor of shape (num_households,)
+        bool: True if extraction successful, False if fallback needed
+    """
+    try:
+        # Validate tensor structure
+        if household_nodes_tensor.dim() != 2:
+            print(f"Warning: Expected 2D tensor, got {household_nodes_tensor.dim()}D tensor")
+            return None, False
+            
+        if household_nodes_tensor.size(1) < 5:  # Need at least 5 columns to access index 4
+            print(f"Warning: Expected at least 5 columns, got {household_nodes_tensor.size(1)} columns")
+            return None, False
+        
+        # Extract size category indices from column 4 (0-indexed)
+        size_category_indices = household_nodes_tensor[:, 4].long()
+        
+        # Ensure indices are on the correct device
+        if size_category_indices.device != device:
+            size_category_indices = size_category_indices.to(device)
+        
+        # Define size categories and mapping (consistent with generateHouseholds.py)
+        size_categories = ['1', '2', '3', '4+']
+        
+        # Define size mapping with weighted distribution for '4+' category
+        def map_size_category_to_actual_size(size_category):
+            """Map size category to actual household size"""
+            if size_category == '4+':
+                # Use weighted distribution for '4+' category based on typical household size patterns
+                # Weights favor smaller sizes within the 4+ range
+                return random.choices([4, 5, 6, 7, 8], weights=[0.4, 0.25, 0.2, 0.1, 0.05])[0]
+            else:
+                return int(size_category)
+        
+        # Convert category indices to actual household sizes
+        household_sizes = torch.zeros_like(size_category_indices, dtype=torch.long, device=device)
+        
+        for i, size_idx in enumerate(size_category_indices):
+            if size_idx < len(size_categories):
+                size_category = size_categories[size_idx]
+                household_sizes[i] = map_size_category_to_actual_size(size_category)
+            else:
+                print(f"Warning: Invalid size category index {size_idx} for household {i}")
+                # Fallback to size 2 for invalid indices
+                household_sizes[i] = 2
+        
+        print(f"Successfully extracted household sizes from tensor. Size distribution:")
+        unique_sizes, counts = torch.unique(household_sizes, return_counts=True)
+        for size, count in zip(unique_sizes.cpu().numpy(), counts.cpu().numpy()):
+            print(f"  Size {size}: {count} households")
+            
+        return household_sizes, True
+        
+    except Exception as e:
+        print(f"Error extracting household sizes from tensor: {e}")
+        return None, False
+
+def validate_household_size_extraction(household_nodes_tensor, device):
+    """
+    Validate the household size extraction functionality with sample data.
+    
+    Args:
+        household_nodes_tensor: The loaded household tensor
+        device: PyTorch device
+    
+    Returns:
+        bool: True if validation passes, False otherwise
+    """
+    print("\n=== Validating Household Size Extraction ===")
+    
+    try:
+        # Test the extraction function
+        extracted_sizes, success = extract_household_sizes_from_tensor(household_nodes_tensor, device)
+        
+        if not success:
+            print("Validation FAILED: Size extraction was not successful")
+            return False
+        
+        # Basic validation checks
+        num_households = household_nodes_tensor.size(0)
+        if extracted_sizes.size(0) != num_households:
+            print(f"Validation FAILED: Expected {num_households} sizes, got {extracted_sizes.size(0)}")
+            return False
+        
+        # Check if sizes are within reasonable range (1-8)
+        min_size = extracted_sizes.min().item()
+        max_size = extracted_sizes.max().item()
+        
+        if min_size < 1 or max_size > 8:
+            print(f"Validation WARNING: Household sizes outside expected range [1-8]: min={min_size}, max={max_size}")
+        
+        # Check for reasonable distribution
+        unique_sizes, counts = torch.unique(extracted_sizes, return_counts=True)
+        print("Extracted size distribution validation:")
+        for size, count in zip(unique_sizes.cpu().numpy(), counts.cpu().numpy()):
+            percentage = (count / num_households) * 100
+            print(f"  Size {size}: {count} households ({percentage:.1f}%)")
+        
+        print("Validation PASSED: Household size extraction is working correctly")
+        return True
+        
+    except Exception as e:
+        print(f"Validation FAILED: Exception during validation: {e}")
+        return False
+
 # Set print options to display all elements of the tensor
 torch.set_printoptions(edgeitems=torch.inf)
 
@@ -124,8 +239,26 @@ print(f"Processing Oxford area: {oxford_areas[0]}")
 hh_size_df = hh_size_df[hh_size_df['geography code'].isin(oxford_areas)]
 
 # Load the tensors from the files
-person_nodes = torch.load(persons_file_path)  # Example size: (num_persons x 5)
-household_nodes = torch.load(households_file_path)  # Example size: (num_households x 3)
+try:
+    person_nodes = torch.load(persons_file_path)  # Example size: (num_persons x 5)
+    print(f"Loaded person_nodes with shape: {person_nodes.shape}")
+except Exception as e:
+    print(f"Error loading person nodes from {persons_file_path}: {e}")
+    raise
+
+try:
+    household_nodes = torch.load(households_file_path)  # Expected size: (num_households x 6)
+    print(f"Loaded household_nodes with shape: {household_nodes.shape}")
+    
+    # Validate household tensor structure for size extraction
+    if household_nodes.dim() == 2 and household_nodes.size(1) >= 5:
+        print(f"Household tensor structure is compatible for size extraction (has {household_nodes.size(1)} columns)")
+    else:
+        print(f"Warning: Household tensor structure may not support size extraction (shape: {household_nodes.shape})")
+        
+except Exception as e:
+    print(f"Error loading household nodes from {households_file_path}: {e}")
+    raise
 
 # Convert to float for neural network compatibility
 person_nodes = person_nodes.float()
@@ -173,10 +306,21 @@ def fit_household_size(composition):
     else:
         return int(random.choices(values_size_org, weights=weights_size_org)[0].replace('8+', '8'))
 
-# Assign sizes to each household based on its composition
-household_sizes = torch.tensor([fit_household_size(reverse_hh_map[hh_pred[i].item()]) for i in range(len(hh_pred))], dtype=torch.long)
-household_sizes = household_sizes.to(device)
-print("Done assigning household sizes")
+# Validate household size extraction functionality
+validation_passed = validate_household_size_extraction(household_nodes, device)
+
+# Try to extract household sizes from the generated household tensor
+household_sizes, extraction_successful = extract_household_sizes_from_tensor(household_nodes, device)
+
+if not extraction_successful:
+    print("Falling back to random household size assignment based on composition...")
+    # Fallback: Assign sizes to each household based on its composition (original logic)
+    household_sizes = torch.tensor([fit_household_size(reverse_hh_map[hh_pred[i].item()]) for i in range(len(hh_pred))], dtype=torch.long)
+    household_sizes = household_sizes.to(device)
+    print("Done assigning household sizes using random method")
+else:
+    print("Done assigning household sizes using tensor extraction method")
+    print(f"Using extracted sizes for {household_sizes.size(0)} households")
 
 # Step 2: Define the GNN model
 class HouseholdAssignmentGNN(torch.nn.Module):

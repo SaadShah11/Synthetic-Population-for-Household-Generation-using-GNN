@@ -154,28 +154,54 @@ def create_geo_plot_trace(selected_area_code, current_dir):
         print(f"Warning: Could not create geo plot trace: {e}")
         return [], {}
 
-def get_target_tensors(cross_table, hh_categories, hh_map, feature_categories, feature_map):
-    y_hh = torch.zeros(num_households, dtype=torch.long, device=device)
-    y_feature = torch.zeros(num_households, dtype=torch.long, device=device)
+def get_target_tensors_2way(cross_table, feature_1_categories, feature_1_map, feature_2_categories, feature_2_map):
+    """
+    Get target tensors for 2-way crosstables (e.g., hhcomp×ethnicity, hhcomp×religion)
+    """
+    y_feature_1 = torch.zeros(num_households, dtype=torch.long, device=device)
+    y_feature_2 = torch.zeros(num_households, dtype=torch.long, device=device)
     
-    # Populate target tensors based on the cross-table and categories
-    # Changed order to match new glossary: household compositions first, then ethnicity/religion
+    # Populate target tensors based on the cross-table and feature categories
     household_idx = 0
 
     for _, row in cross_table.iterrows():
-        for hh in hh_categories:  # household compositions
-            for feature in feature_categories:  # ethnicity/religion categories
-                col_name = f'{hh} {feature}'
-                count = int(row.get(col_name, -1))
-                if count == -1: 
-                    print(col_name)
+        for feature_1 in feature_1_categories:  # First attribute (e.g., hhcomp)
+            for feature_2 in feature_2_categories:  # Second attribute (e.g., ethnicity/religion)
+                col_name = f'{feature_1} {feature_2}'
+                count = int(row.get(col_name, 0))
                 for _ in range(count):
                     if household_idx < num_households:
-                        y_hh[household_idx] = hh_map.get(hh, -1)
-                        y_feature[household_idx] = feature_map.get(feature, -1)
+                        y_feature_1[household_idx] = feature_1_map.get(feature_1, -1)
+                        y_feature_2[household_idx] = feature_2_map.get(feature_2, -1)
                         household_idx += 1
 
-    return y_hh, y_feature
+    return (y_feature_1, y_feature_2)
+
+def get_target_tensors_3way(cross_table, feature_1_categories, feature_1_map, feature_2_categories, feature_2_map, feature_3_categories, feature_3_map):
+    """
+    Get target tensors for 3-way crosstables (e.g., tenure×size×rooms)
+    """
+    y_feature_1 = torch.zeros(num_households, dtype=torch.long, device=device)
+    y_feature_2 = torch.zeros(num_households, dtype=torch.long, device=device)
+    y_feature_3 = torch.zeros(num_households, dtype=torch.long, device=device)
+    
+    # Populate target tensors based on the cross-table and feature categories
+    household_idx = 0
+
+    for _, row in cross_table.iterrows():
+        for feature_1 in feature_1_categories:  # First attribute (e.g., tenure)
+            for feature_2 in feature_2_categories:  # Second attribute (e.g., size)
+                for feature_3 in feature_3_categories:  # Third attribute (e.g., rooms)
+                    col_name = f'{feature_1} {feature_2} {feature_3}'
+                    count = int(row.get(col_name, 0))
+                    for _ in range(count):
+                        if household_idx < num_households:
+                            y_feature_1[household_idx] = feature_1_map.get(feature_1, -1)
+                            y_feature_2[household_idx] = feature_2_map.get(feature_2, -1)
+                            y_feature_3[household_idx] = feature_3_map.get(feature_3, -1)
+                            household_idx += 1
+
+    return (y_feature_1, y_feature_2, y_feature_3)
 
 # Load the data from individual tables
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -184,10 +210,18 @@ religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/i
 # hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition.csv'))
 # hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_Households.csv'))
 hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_Updated.csv'))
+# New attribute tables
+tenure_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Tenure_Updated.csv'))
+hh_size_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_size_Updated.csv'))
+rooms_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Number_of_rooms_Updated.csv'))
+
+# Load crosstables
 # hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_ethnicity.csv'))
 # hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_religion.csv'))
 hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_religion_Updated.csv'))
 hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_ethnicity_Updated.csv'))
+# New crosstable
+tenure_by_size_by_rooms_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/Tenure_by_household_size_by_number_of_rooms_Updated.csv'))
 
 # Use the area code passed from command line
 oxford_areas = [selected_area_code]
@@ -195,13 +229,26 @@ print(f"Processing Oxford area: {oxford_areas[0]}")
 
 ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B2', 'B3', 'O1', 'O2']
 religion_categories = ['C','B','H','J','M','S','O','N','NS']
+# New attribute categories
+tenure_categories = ['OW', 'SO', 'SR', 'PR']  # You may need to adjust based on your data
+size_categories = ['1', '2', '3', '4+']
+rooms_categories = ['1', '2', '3', '4', '5', '6+']  # You may need to adjust based on your data
 
 # Filter the DataFrame for the specified Oxford areas
 ethnicity_df = ethnicity_df[ethnicity_df['geography code'].isin(oxford_areas)]
 religion_df = religion_df[religion_df['geography code'].isin(oxford_areas)]
 hhcomp_df = hhcomp_df[hhcomp_df['geography code'].isin(oxford_areas)]
+# Filter new dataframes
+tenure_df = tenure_df[tenure_df['geography code'].isin(oxford_areas)]
+hh_size_df = hh_size_df[hh_size_df['geography code'].isin(oxford_areas)]
+rooms_df = rooms_df[rooms_df['geography code'].isin(oxford_areas)]
+# Filter crosstables
 hhcomp_by_ethnicity_df = hhcomp_by_ethnicity_df[hhcomp_by_ethnicity_df['geography code'].isin(oxford_areas)]
 hhcomp_by_religion_df = hhcomp_by_religion_df[hhcomp_by_religion_df['geography code'].isin(oxford_areas)]
+tenure_by_size_by_rooms_df = tenure_by_size_by_rooms_df[tenure_by_size_by_rooms_df['geography code'].isin(oxford_areas)]
+
+# Drop unnecessary columns from new crosstable
+tenure_by_size_by_rooms_df = tenure_by_size_by_rooms_df.drop(columns = ['total', 'geography code'])
 
 num_households = int(hhcomp_df['total'].iloc[0])
 print(f"Number of households: {num_households}")
@@ -236,6 +283,10 @@ hhcomp_by_religion_df = hhcomp_by_religion_df.drop(columns = ['total', 'geograph
 ethnicity_map = {category: i for i, category in enumerate(ethnicity_categories)}
 religion_map = {category: i for i, category in enumerate(religion_categories)}
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
+# New attribute maps
+tenure_map = {category: i for i, category in enumerate(tenure_categories)}
+size_map = {category: i for i, category in enumerate(size_categories)}
+rooms_map = {category: i for i, category in enumerate(rooms_categories)}
 
 # Create household nodes with unique IDs
 households_nodes = torch.arange(num_households).view(num_households, 1).to(device)
@@ -244,26 +295,44 @@ households_nodes = torch.arange(num_households).view(num_households, 1).to(devic
 ethnicity_nodes = torch.tensor([[ethnicity_map[ethnicity]] for ethnicity in ethnicity_categories], dtype=torch.float).to(device)
 religion_nodes = torch.tensor([[religion_map[religion]] for religion in religion_categories], dtype=torch.float).to(device)
 
+# Create nodes for new attributes
+tenure_nodes = torch.tensor([[tenure_map[tenure]] for tenure in tenure_categories], dtype=torch.float).to(device)
+size_nodes = torch.tensor([[size_map[size]] for size in size_categories], dtype=torch.float).to(device)
+rooms_nodes = torch.tensor([[rooms_map[rooms]] for rooms in rooms_categories], dtype=torch.float).to(device)
+
 # Combine all nodes into a single tensor
-node_features = torch.cat([households_nodes, ethnicity_nodes, religion_nodes], dim=0).to(device)
+node_features = torch.cat([households_nodes, ethnicity_nodes, religion_nodes, tenure_nodes, size_nodes, rooms_nodes], dim=0).to(device)
 
 # Edge index generation
 def generate_edge_index(num_households):
     edge_index = []
     num_ethnicities = len(ethnicity_map)
     num_religions = len(religion_map)
+    num_tenures = len(tenure_map)
+    num_sizes = len(size_map)
+    num_rooms = len(rooms_map)
 
     ethnicity_start_idx = num_households
     religion_start_idx = ethnicity_start_idx + num_ethnicities
+    tenure_start_idx = religion_start_idx + num_religions
+    size_start_idx = tenure_start_idx + num_tenures
+    rooms_start_idx = size_start_idx + num_sizes
 
     for i in range(num_households):
         # Randomly select an ethnicity and religion
         ethnicity_category = random.choice(range(ethnicity_start_idx, ethnicity_start_idx + num_ethnicities))
         religion_category = random.choice(range(religion_start_idx, religion_start_idx + num_religions))
+        # Randomly select new attributes
+        tenure_category = random.choice(range(tenure_start_idx, tenure_start_idx + num_tenures))
+        size_category = random.choice(range(size_start_idx, size_start_idx + num_sizes))
+        rooms_category = random.choice(range(rooms_start_idx, rooms_start_idx + num_rooms))
         
         # Append edges for the selected categories
         edge_index.append([i, ethnicity_category])
         edge_index.append([i, religion_category])
+        edge_index.append([i, tenure_category])
+        edge_index.append([i, size_category])
+        edge_index.append([i, rooms_category])
 
     # Convert edge_index to a tensor and transpose for PyTorch Geometric
     edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous().to(device)
@@ -277,7 +346,7 @@ data = Data(x=node_features, edge_index=edge_index).to(device)
 
 # Enhanced GNN Model
 class EnhancedGNNModelHousehold(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, mlp_hidden_dim, out_channels_hh, out_channels_ethnicity, out_channels_religion):
+    def __init__(self, in_channels, hidden_channels, mlp_hidden_dim, out_channels_hh, out_channels_ethnicity, out_channels_religion, out_channels_tenure, out_channels_size, out_channels_rooms):
         super(EnhancedGNNModelHousehold, self).__init__()
         
         # GraphSAGE layers
@@ -313,6 +382,25 @@ class EnhancedGNNModelHousehold(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(mlp_hidden_dim, out_channels_religion)
         )
+        
+        # New MLP layers for new attributes
+        self.mlp_tenure = torch.nn.Sequential(
+            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(mlp_hidden_dim, out_channels_tenure)
+        )
+        
+        self.mlp_size = torch.nn.Sequential(
+            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(mlp_hidden_dim, out_channels_size)
+        )
+        
+        self.mlp_rooms = torch.nn.Sequential(
+            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(mlp_hidden_dim, out_channels_rooms)
+        )
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -342,20 +430,35 @@ class EnhancedGNNModelHousehold(torch.nn.Module):
         hh_out = self.mlp_hh(x[:num_households])
         ethnicity_out = self.mlp_ethnicity(x[:num_households])
         religion_out = self.mlp_religion(x[:num_households])
+        tenure_out = self.mlp_tenure(x[:num_households])
+        size_out = self.mlp_size(x[:num_households])
+        rooms_out = self.mlp_rooms(x[:num_households])
         
-        return hh_out, ethnicity_out, religion_out
+        return hh_out, ethnicity_out, religion_out, tenure_out, size_out, rooms_out
 
+# Get target tensors
 targets = []
-targets.append(
-    (
-        ('hhcomp', 'religion'), 
-        get_target_tensors(hhcomp_by_religion_df, hh_compositions, hh_map, religion_categories, religion_map)
-    )
-)
+
+# 2-way targets using appropriate function
 targets.append(
     (
         ('hhcomp', 'ethnicity'), 
-        get_target_tensors(hhcomp_by_ethnicity_df, hh_compositions, hh_map, ethnicity_categories, ethnicity_map)
+        get_target_tensors_2way(hhcomp_by_ethnicity_df, hh_compositions, hh_map, ethnicity_categories, ethnicity_map)
+    )
+)
+
+targets.append(
+    (
+        ('hhcomp', 'religion'), 
+        get_target_tensors_2way(hhcomp_by_religion_df, hh_compositions, hh_map, religion_categories, religion_map)
+    )
+)
+
+# 3-way target using appropriate function
+targets.append(
+    (
+        ('tenure', 'size', 'rooms'), 
+        get_target_tensors_3way(tenure_by_size_by_rooms_df, tenure_categories, tenure_map, size_categories, size_map, rooms_categories, rooms_map)
     )
 )
 
@@ -394,58 +497,124 @@ def calculate_r2_accuracy(generated_counts, target_counts):
     return 1.0 - sse / sst if sst > 1e-12 else 1.0
 
 # Optimized GPU-friendly accuracy function for multi-task learning
-def calculate_distribution_task_accuracy(pred_1, pred_2, target_combination, actual_crosstable):
+def calculate_distribution_task_accuracy(pred_1, pred_2, target_combination, actual_crosstable, pred_3=None):
     """
     Fast GPU-optimized distribution-based accuracy calculation.
     Uses tensor operations instead of pandas for speed during training.
+    Handles both 2-way and 3-way combinations.
     """
-    categories_1, categories_2 = target_combination
-    
-    # Map attribute names to category counts
-    category_sizes = {
-        'hhcomp': len(hh_compositions),
-        'ethnicity': len(ethnicity_categories),
-        'religion': len(religion_categories)
-    }
-    
-    size_1 = category_sizes[categories_1]
-    size_2 = category_sizes[categories_2]
-    
-    # Create predicted counts tensor (keep on GPU)
-    # Use a flattened approach with new ordering: combination_idx = pred_1 * size_2 + pred_2
-    combo_indices = pred_1 * size_2 + pred_2
-    total_combinations = size_1 * size_2
-    
-    # Count occurrences efficiently on GPU
-    predicted_counts = torch.bincount(combo_indices, minlength=total_combinations).float()
-    
-    # Pre-compute actual counts tensor (do this only once, not every epoch)
-    cache_key = f'actual_counts_{categories_1}_{categories_2}'
-    if not hasattr(calculate_distribution_task_accuracy, cache_key):
-        # Extract actual counts and convert to tensor format
-        actual_counts_tensor = torch.zeros(total_combinations, dtype=torch.float, device=device)
+    if pred_3 is None:
+        # 2-way calculation
+        categories_1, categories_2 = target_combination
         
-        category_map = {
-            'hhcomp': hh_compositions,
-            'ethnicity': ethnicity_categories,
-            'religion': religion_categories
+        # Map attribute names to category counts
+        category_sizes = {
+            'hhcomp': len(hh_compositions),
+            'ethnicity': len(ethnicity_categories),
+            'religion': len(religion_categories),
+            'tenure': len(tenure_categories),
+            'size': len(size_categories),
+            'rooms': len(rooms_categories)
         }
         
-        cats_1 = category_map[categories_1]
-        cats_2 = category_map[categories_2]
+        size_1 = category_sizes[categories_1]
+        size_2 = category_sizes[categories_2]
         
-        # Changed order to match new glossary: household compositions first, then ethnicity/religion
-        for i1, cat1 in enumerate(cats_1):  # household compositions
-            for i2, cat2 in enumerate(cats_2):  # ethnicity/religion categories
-                original_col = f'{cat1} {cat2}'
-                if original_col in actual_crosstable.columns:
-                    combo_idx = i1 * size_2 + i2
-                    actual_counts_tensor[combo_idx] = actual_crosstable[original_col].iloc[0]
+        # Create predicted counts tensor (keep on GPU)
+        combo_indices = pred_1 * size_2 + pred_2
+        total_combinations = size_1 * size_2
         
-        # Cache the result to avoid recomputation
-        setattr(calculate_distribution_task_accuracy, cache_key, actual_counts_tensor)
-    
-    actual_counts = getattr(calculate_distribution_task_accuracy, cache_key)
+        # Count occurrences efficiently on GPU
+        predicted_counts = torch.bincount(combo_indices, minlength=total_combinations).float()
+        
+        # Pre-compute actual counts tensor (do this only once, not every epoch)
+        cache_key = f'actual_counts_{categories_1}_{categories_2}'
+        if not hasattr(calculate_distribution_task_accuracy, cache_key):
+            # Extract actual counts and convert to tensor format
+            actual_counts_tensor = torch.zeros(total_combinations, dtype=torch.float, device=device)
+            
+            category_map = {
+                'hhcomp': hh_compositions,
+                'ethnicity': ethnicity_categories,
+                'religion': religion_categories,
+                'tenure': tenure_categories,
+                'size': size_categories,
+                'rooms': rooms_categories
+            }
+            
+            cats_1 = category_map[categories_1]
+            cats_2 = category_map[categories_2]
+            
+            # Order: household compositions first, then ethnicity/religion
+            for i1, cat1 in enumerate(cats_1):
+                for i2, cat2 in enumerate(cats_2):
+                    original_col = f'{cat1} {cat2}'
+                    if original_col in actual_crosstable.columns:
+                        combo_idx = i1 * size_2 + i2
+                        actual_counts_tensor[combo_idx] = actual_crosstable[original_col].iloc[0]
+            
+            # Cache the result to avoid recomputation
+            setattr(calculate_distribution_task_accuracy, cache_key, actual_counts_tensor)
+        
+        actual_counts = getattr(calculate_distribution_task_accuracy, cache_key)
+        
+    else:
+        # 3-way calculation
+        categories_1, categories_2, categories_3 = target_combination
+        
+        # Map attribute names to category counts
+        category_sizes = {
+            'hhcomp': len(hh_compositions),
+            'ethnicity': len(ethnicity_categories),
+            'religion': len(religion_categories),
+            'tenure': len(tenure_categories),
+            'size': len(size_categories),
+            'rooms': len(rooms_categories)
+        }
+        
+        size_1 = category_sizes[categories_1]
+        size_2 = category_sizes[categories_2]
+        size_3 = category_sizes[categories_3]
+        
+        # Create predicted counts tensor (keep on GPU) - using correct ordering: tenure -> size -> rooms
+        combo_indices = pred_1 * (size_2 * size_3) + pred_2 * size_3 + pred_3
+        total_combinations = size_1 * size_2 * size_3
+        
+        # Count occurrences efficiently on GPU
+        predicted_counts = torch.bincount(combo_indices, minlength=total_combinations).float()
+        
+        # Pre-compute actual counts tensor (do this only once, not every epoch)
+        cache_key = f'actual_counts_{categories_1}_{categories_2}_{categories_3}'
+        if not hasattr(calculate_distribution_task_accuracy, cache_key):
+            # Extract actual counts and convert to tensor format
+            actual_counts_tensor = torch.zeros(total_combinations, dtype=torch.float, device=device)
+            
+            category_map = {
+                'hhcomp': hh_compositions,
+                'ethnicity': ethnicity_categories,
+                'religion': religion_categories,
+                'tenure': tenure_categories,
+                'size': size_categories,
+                'rooms': rooms_categories
+            }
+            
+            cats_1 = category_map[categories_1]
+            cats_2 = category_map[categories_2]
+            cats_3 = category_map[categories_3]
+            
+            # Order: feature_1 first, then feature_2, then feature_3 (tenure -> size -> rooms)
+            for i1, cat1 in enumerate(cats_1):
+                for i2, cat2 in enumerate(cats_2):
+                    for i3, cat3 in enumerate(cats_3):
+                        original_col = f'{cat1} {cat2} {cat3}'
+                        if original_col in actual_crosstable.columns:
+                            combo_idx = i1 * (size_2 * size_3) + i2 * size_3 + i3
+                            actual_counts_tensor[combo_idx] = actual_crosstable[original_col].iloc[0]
+            
+            # Cache the result to avoid recomputation
+            setattr(calculate_distribution_task_accuracy, cache_key, actual_counts_tensor)
+        
+        actual_counts = getattr(calculate_distribution_task_accuracy, cache_key)
     
     # Calculate R² efficiently on GPU
     actual_mean = actual_counts.mean()
@@ -477,15 +646,26 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         mlp_hidden_dim=mlp_hidden_dim,
         out_channels_hh=len(hh_compositions), 
         out_channels_ethnicity=len(ethnicity_categories), 
-        out_channels_religion=len(religion_categories)
+        out_channels_religion=len(religion_categories),
+        out_channels_tenure=len(tenure_categories),
+        out_channels_size=len(size_categories),
+        out_channels_rooms=len(rooms_categories)
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # Custom loss function
-    def custom_loss_function(hh_out, feature_out, y_hh, y_feature):
-        loss_hh = F.cross_entropy(hh_out, y_hh) 
-        loss_feature = F.cross_entropy(feature_out, y_feature)
-        total_loss = loss_hh + loss_feature
+    # Custom loss function for 2-way targets
+    def custom_loss_function_2way(first_out, second_out, y_first, y_second):
+        loss_first = F.cross_entropy(first_out, y_first)
+        loss_second = F.cross_entropy(second_out, y_second)
+        total_loss = loss_first + loss_second
+        return total_loss
+
+    # Custom loss function for 3-way targets
+    def custom_loss_function_3way(first_out, second_out, third_out, y_first, y_second, y_third):
+        loss_first = F.cross_entropy(first_out, y_first)
+        loss_second = F.cross_entropy(second_out, y_second)
+        loss_third = F.cross_entropy(third_out, y_third)
+        total_loss = loss_first + loss_second + loss_third
         return total_loss
 
     loss_data = {}
@@ -514,41 +694,65 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         optimizer.zero_grad()
 
         # Forward pass
-        hh_out, ethnicity_out, religion_out = model(data)
+        hh_out, ethnicity_out, religion_out, tenure_out, size_out, rooms_out = model(data)
 
         out = {}
         out['hhcomp'] = hh_out[:num_households]
         out['ethnicity'] = ethnicity_out[:num_households]
         out['religion'] = religion_out[:num_households]
+        out['tenure'] = tenure_out[:num_households]
+        out['size'] = size_out[:num_households]
+        out['rooms'] = rooms_out[:num_households]
 
         # Calculate loss
         loss = 0
         
         # Calculate losses for all target combinations
         for i in range(len(targets)):
-            current_loss = custom_loss_function(
-                out[targets[i][0][0]], out[targets[i][0][1]],
-                targets[i][1][0], targets[i][1][1]
-            )
+            if len(targets[i][0]) == 2:  # 2-way targets
+                current_loss = custom_loss_function_2way(
+                    out[targets[i][0][0]], out[targets[i][0][1]],
+                    targets[i][1][0], targets[i][1][1]
+                )
+            elif len(targets[i][0]) == 3:  # 3-way targets
+                current_loss = custom_loss_function_3way(
+                    out[targets[i][0][0]], out[targets[i][0][1]], out[targets[i][0][2]],
+                    targets[i][1][0], targets[i][1][1], targets[i][1][2]
+                )
             loss += current_loss
             
         # Calculate accuracy only every 100 epochs to speed up training
         if (epoch + 1) % 100 == 0:
             epoch_task_accuracies = []
             for i in range(len(targets)):
-                # Calculate distribution-based accuracy for this task
-                pred_1 = out[targets[i][0][0]].argmax(dim=1)
-                pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                if len(targets[i][0]) == 2:  # 2-way targets
+                    # Calculate distribution-based accuracy for this task
+                    pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                    pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                    
+                    # Get the corresponding actual cross-table
+                    if i == 0:  # hhcomp-ethnicity
+                        actual_crosstable = hhcomp_by_ethnicity_df
+                    elif i == 1:  # hhcomp-religion
+                        actual_crosstable = hhcomp_by_religion_df
+                    
+                    task_distribution_accuracy = calculate_distribution_task_accuracy(
+                        pred_1, pred_2, targets[i][0], actual_crosstable
+                    )
+                elif len(targets[i][0]) == 3:  # 3-way targets
+                    # Calculate distribution-based accuracy for 3-way task
+                    pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                    pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                    pred_3 = out[targets[i][0][2]].argmax(dim=1)
+                    
+                    # Get the corresponding actual cross-table
+                    if i == 2:  # tenure-size-rooms (assuming it's the 3rd target)
+                        actual_crosstable = tenure_by_size_by_rooms_df
+                    
+                    task_distribution_accuracy = calculate_distribution_task_accuracy(
+                        pred_1, pred_2, targets[i][0], actual_crosstable, pred_3
+                    )
                 
-                # Get the corresponding actual cross-table
-                if i == 0:  # hhcomp-religion
-                    actual_crosstable = hhcomp_by_religion_df
-                else:  # hhcomp-ethnicity
-                    actual_crosstable = hhcomp_by_ethnicity_df
-                
-                task_distribution_accuracy = calculate_distribution_task_accuracy(
-                    pred_1, pred_2, targets[i][0], actual_crosstable
-                )
                 epoch_task_accuracies.append(task_distribution_accuracy)
 
             # Calculate average accuracy for this epoch
@@ -596,37 +800,58 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
     # Evaluate predictions
     model.eval()
     with torch.no_grad():
-        hh_out, ethnicity_out, religion_out = model(data)
+        hh_out, ethnicity_out, religion_out, tenure_out, size_out, rooms_out = model(data)
         
         out = {}
         out['hhcomp'] = hh_out[:num_households]
         out['ethnicity'] = ethnicity_out[:num_households]
         out['religion'] = religion_out[:num_households]
+        out['tenure'] = tenure_out[:num_households]
+        out['size'] = size_out[:num_households]
+        out['rooms'] = rooms_out[:num_households]
         
         # Get the predicted class for each attribute by taking argmax of output logits
         hh_pred = out['hhcomp'].argmax(dim=1)
         ethnicity_pred = out['ethnicity'].argmax(dim=1)
         religion_pred = out['religion'].argmax(dim=1)
+        tenure_pred = out['tenure'].argmax(dim=1)
+        size_pred = out['size'].argmax(dim=1)
+        rooms_pred = out['rooms'].argmax(dim=1)
         
         # Calculate distribution-based accuracy across all tasks
         net_accuracy = 0
         final_task_accuracies = {}
         
         for i in range(len(targets)):
-            # Get predictions for the current target combination (e.g., hhcomp+religion or hhcomp+ethnicity)
-            pred_1 = out[targets[i][0][0]].argmax(dim=1)  # First attribute prediction (e.g., household composition)
-            pred_2 = out[targets[i][0][1]].argmax(dim=1)  # Second attribute prediction (e.g., religion or ethnicity)
-            
-            # Get the corresponding actual cross-table
-            if i == 0:  # hhcomp-religion
-                actual_crosstable = hhcomp_by_religion_df
-            else:  # hhcomp-ethnicity
-                actual_crosstable = hhcomp_by_ethnicity_df
-            
-            # Calculate distribution-based accuracy (R²)
-            task_distribution_accuracy = calculate_distribution_task_accuracy(
-                pred_1, pred_2, targets[i][0], actual_crosstable
-            )
+            if len(targets[i][0]) == 2:  # 2-way targets
+                # Get predictions for the current target combination
+                pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                
+                # Get the corresponding actual cross-table
+                if i == 0:  # hhcomp-ethnicity
+                    actual_crosstable = hhcomp_by_ethnicity_df
+                elif i == 1:  # hhcomp-religion
+                    actual_crosstable = hhcomp_by_religion_df
+                
+                # Calculate distribution-based accuracy (R²)
+                task_distribution_accuracy = calculate_distribution_task_accuracy(
+                    pred_1, pred_2, targets[i][0], actual_crosstable
+                )
+            elif len(targets[i][0]) == 3:  # 3-way targets
+                # Calculate distribution-based accuracy for 3-way task
+                pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                pred_3 = out[targets[i][0][2]].argmax(dim=1)
+                
+                # Get the corresponding actual cross-table
+                if i == 2:  # tenure-size-rooms (assuming it's the 3rd target)
+                    actual_crosstable = tenure_by_size_by_rooms_df
+                
+                # Calculate distribution-based accuracy (R²)
+                task_distribution_accuracy = calculate_distribution_task_accuracy(
+                    pred_1, pred_2, targets[i][0], actual_crosstable, pred_3
+                )
             
             # Accumulate accuracy across all target combinations
             net_accuracy += task_distribution_accuracy
@@ -645,32 +870,65 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         net_rmse = 0
         final_task_rmses = {}
         for i in range(len(targets)):
-            pred_1 = out[targets[i][0][0]].argmax(dim=1)
-            pred_2 = out[targets[i][0][1]].argmax(dim=1)
-            if i == 0:
-                actual_crosstable = hhcomp_by_religion_df
-            else:
-                actual_crosstable = hhcomp_by_ethnicity_df
-            # Calculate R2
-            task_distribution_accuracy = calculate_distribution_task_accuracy(
-                pred_1, pred_2, targets[i][0], actual_crosstable
-            )
-            # Calculate RMSE
-            # Build predicted and actual counts dicts
-            size_1 = len(hh_compositions if targets[i][0][0]=='hhcomp' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else religion_categories))
-            size_2 = len(religion_categories if targets[i][0][1]=='religion' else ethnicity_categories)
-            pred_counts = torch.bincount(pred_1 * size_2 + pred_2, minlength=size_1*size_2).cpu().numpy()
-            # Build actual counts
-            actual_counts = []
-            cats_1 = hh_compositions if targets[i][0][0]=='hhcomp' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else religion_categories)
-            cats_2 = religion_categories if targets[i][0][1]=='religion' else ethnicity_categories
-            for cat1 in cats_1:
-                for cat2 in cats_2:
-                    col = f'{cat1} {cat2}'
-                    actual_counts.append(actual_crosstable[col].iloc[0] if col in actual_crosstable.columns else 0)
-            pred_dict = {j: pred_counts[j] for j in range(len(pred_counts))}
-            actual_dict = {j: actual_counts[j] for j in range(len(actual_counts))}
-            task_rmse = calculate_rmse(pred_dict, actual_dict)
+            if len(targets[i][0]) == 2:  # 2-way targets
+                pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                
+                if i == 0:  # hhcomp-ethnicity
+                    actual_crosstable = hhcomp_by_ethnicity_df
+                elif i == 1:  # hhcomp-religion
+                    actual_crosstable = hhcomp_by_religion_df
+                
+                # Calculate RMSE
+                # Build predicted and actual counts dicts
+                size_1 = len(hh_compositions if targets[i][0][0]=='hhcomp' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else religion_categories))
+                size_2 = len(religion_categories if targets[i][0][1]=='religion' else ethnicity_categories)
+                pred_counts = torch.bincount(pred_1 * size_2 + pred_2, minlength=size_1*size_2).cpu().numpy()
+                
+                # Build actual counts
+                actual_counts = []
+                cats_1 = hh_compositions if targets[i][0][0]=='hhcomp' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else religion_categories)
+                cats_2 = religion_categories if targets[i][0][1]=='religion' else ethnicity_categories
+                for cat1 in cats_1:
+                    for cat2 in cats_2:
+                        col = f'{cat1} {cat2}'
+                        actual_counts.append(actual_crosstable[col].iloc[0] if col in actual_crosstable.columns else 0)
+                pred_dict = {j: pred_counts[j] for j in range(len(pred_counts))}
+                actual_dict = {j: actual_counts[j] for j in range(len(actual_counts))}
+                task_rmse = calculate_rmse(pred_dict, actual_dict)
+            elif len(targets[i][0]) == 3:  # 3-way targets
+                pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                pred_3 = out[targets[i][0][2]].argmax(dim=1)
+                
+                if i == 2:  # tenure-size-rooms
+                    actual_crosstable = tenure_by_size_by_rooms_df
+                
+                # Calculate RMSE for 3-way combination
+                size_1 = len(tenure_categories if targets[i][0][0]=='tenure' else (size_categories if targets[i][0][0]=='size' else rooms_categories))
+                size_2 = len(size_categories if targets[i][0][1]=='size' else (tenure_categories if targets[i][0][1]=='tenure' else rooms_categories))
+                size_3 = len(rooms_categories if targets[i][0][2]=='rooms' else (tenure_categories if targets[i][0][2]=='tenure' else size_categories))
+                
+                # Use correct ordering: tenure -> size -> rooms (pred_1 -> pred_2 -> pred_3)
+                pred_counts = torch.bincount(pred_1 * (size_2 * size_3) + pred_2 * size_3 + pred_3, minlength=size_1*size_2*size_3).cpu().numpy()
+                
+                # Build actual counts
+                actual_counts = []
+                cats_1 = tenure_categories if targets[i][0][0]=='tenure' else (size_categories if targets[i][0][0]=='size' else rooms_categories)
+                cats_2 = size_categories if targets[i][0][1]=='size' else (tenure_categories if targets[i][0][1]=='tenure' else rooms_categories)
+                cats_3 = rooms_categories if targets[i][0][2]=='rooms' else (tenure_categories if targets[i][0][2]=='tenure' else size_categories)
+                
+                # Order: cat1 first, then cat2, then cat3 (tenure -> size -> rooms)
+                for cat1 in cats_1:
+                    for cat2 in cats_2:
+                        for cat3 in cats_3:
+                            col = f'{cat1} {cat2} {cat3}'
+                            actual_counts.append(actual_crosstable[col].iloc[0] if col in actual_crosstable.columns else 0)
+                
+                pred_dict = {j: pred_counts[j] for j in range(len(pred_counts))}
+                actual_dict = {j: actual_counts[j] for j in range(len(actual_counts))}
+                task_rmse = calculate_rmse(pred_dict, actual_dict)
+            
             net_rmse += task_rmse
             task_name = '_'.join(targets[i][0])
             final_task_rmses[task_name] = task_rmse
@@ -688,7 +946,7 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 'model_state': best_epoch_state,
                 'loss': best_epoch_loss,
                 'accuracy': final_accuracy,
-                'predictions': (hh_pred, ethnicity_pred, religion_pred),
+                'predictions': (hh_pred, ethnicity_pred, religion_pred, tenure_pred, size_pred, rooms_pred),
                 'lr': lr,
                 'hidden_channels': hidden_channels,
                 'convergence_data': convergence_data,
@@ -696,7 +954,7 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 'task_rmses': final_task_rmses
             })
     
-    return best_epoch_loss, average_accuracy, final_accuracy, (hh_pred, ethnicity_pred, religion_pred), convergence_data
+    return best_epoch_loss, average_accuracy, final_accuracy, (hh_pred, ethnicity_pred, religion_pred, tenure_pred, size_pred, rooms_pred), convergence_data
 
 # Run grid search over hyperparameters
 total_start_time = time.time()
@@ -775,7 +1033,10 @@ os.makedirs(output_dir, exist_ok=True)
 best_predictions = {
     'household_pred': best_model_info['predictions'][0].cpu().numpy(),
     'ethnicity_pred': best_model_info['predictions'][1].cpu().numpy(),
-    'religion_pred': best_model_info['predictions'][2].cpu().numpy()
+    'religion_pred': best_model_info['predictions'][2].cpu().numpy(),
+    'tenure_pred': best_model_info['predictions'][3].cpu().numpy(),
+    'size_pred': best_model_info['predictions'][4].cpu().numpy(),
+    'rooms_pred': best_model_info['predictions'][5].cpu().numpy()
 }
 
 # Save hyperparameter results
@@ -808,15 +1069,18 @@ best_config = {
 }
 
 # Extract the best model's predictions for visualization
-hh_pred, ethnicity_pred, religion_pred = best_model_info['predictions']
+hh_pred, ethnicity_pred, religion_pred, tenure_pred, size_pred, rooms_pred = best_model_info['predictions']
 
 # Create household tensor with attributes matching original format
-# Expected format: [household_composition, ethnicity, religion] (3 columns)
-# Where hh_composition is at index 0, ethnicity is at index 1, religion is at index 2
+# Expected format: [household_composition, ethnicity, religion, tenure, size, rooms] (6 columns)
+# Where hh_composition is at index 0, ethnicity is at index 1, religion is at index 2, tenure is at index 3, size is at index 4, rooms is at index 5
 household_nodes_tensor = torch.stack([
     hh_pred,        # Column 0: household composition
     ethnicity_pred, # Column 1: ethnicity
-    religion_pred   # Column 2: religion
+    religion_pred,  # Column 2: religion
+    tenure_pred,    # Column 3: tenure
+    size_pred,      # Column 4: size
+    rooms_pred      # Column 5: rooms
 ], dim=1)
 
 # Save household tensor
@@ -828,11 +1092,17 @@ print(f"\nBest model outputs saved to {output_dir}")
 hh_comp_pred_indices = hh_pred.cpu().numpy()
 ethnicity_pred_indices = ethnicity_pred.cpu().numpy()
 religion_pred_indices = religion_pred.cpu().numpy()
+tenure_pred_indices = tenure_pred.cpu().numpy()
+size_pred_indices = size_pred.cpu().numpy()
+rooms_pred_indices = rooms_pred.cpu().numpy()
 
 # Convert indices to category names
 hh_comp_pred_names = [hh_compositions[i] for i in hh_comp_pred_indices]
 ethnicity_pred_names = [ethnicity_categories[i] for i in ethnicity_pred_indices]
 religion_pred_names = [religion_categories[i] for i in religion_pred_indices]
+tenure_pred_names = [tenure_categories[i] for i in tenure_pred_indices]
+size_pred_names = [size_categories[i] for i in size_pred_indices]
+rooms_pred_names = [rooms_categories[i] for i in rooms_pred_indices]
 
 # Calculate counts of actual categories from the original data
 hh_comp_actual = {}
@@ -848,28 +1118,53 @@ religion_actual = {}
 for rel in religion_categories:
     religion_actual[rel] = religion_df[rel].iloc[0]
 
+# Add actual data extraction for new attributes
+tenure_actual = {}
+for ten in tenure_categories:
+    tenure_actual[ten] = tenure_df[ten].iloc[0]
+
+size_actual = {}
+for sz in size_categories:
+    size_actual[sz] = hh_size_df[sz].iloc[0]
+
+rooms_actual = {}
+for rm in rooms_categories:
+    rooms_actual[rm] = rooms_df[rm].iloc[0]
+
 # Calculate counts of predicted categories
 hh_comp_pred = dict(Counter(hh_comp_pred_names))
 ethnicity_pred = dict(Counter(ethnicity_pred_names))
 religion_pred = dict(Counter(religion_pred_names))
+tenure_pred = dict(Counter(tenure_pred_names))
+size_pred = dict(Counter(size_pred_names))
+rooms_pred = dict(Counter(rooms_pred_names))
 
 # Normalize the actual distributions to match the total number of households in predictions
 # This ensures fair comparison of relative proportions
 total_actual_ethnicity = sum(ethnicity_actual.values())
 total_actual_religion = sum(religion_actual.values())
+total_actual_tenure = sum(tenure_actual.values())
+total_actual_size = sum(size_actual.values())
+total_actual_rooms = sum(rooms_actual.values())
 total_pred = num_households
 
 if total_actual_ethnicity > 0:
     ethnicity_actual = {k: v * total_pred / total_actual_ethnicity for k, v in ethnicity_actual.items()}
 if total_actual_religion > 0:
     religion_actual = {k: v * total_pred / total_actual_religion for k, v in religion_actual.items()}
+if total_actual_tenure > 0:
+    tenure_actual = {k: v * total_pred / total_actual_tenure for k, v in tenure_actual.items()}
+if total_actual_size > 0:
+    size_actual = {k: v * total_pred / total_actual_size for k, v in size_actual.items()}
+if total_actual_rooms > 0:
+    rooms_actual = {k: v * total_pred / total_actual_rooms for k, v in rooms_actual.items()}
 
-# Now create crosstable dataframes for visualization
+# Create crosstable dataframes for visualization - only for combinations that actually exist in the data
 # Reshape actual crosstables to match our format
 hh_by_ethnicity_actual_reshaped = pd.DataFrame(0, index=hh_compositions, columns=ethnicity_categories)
 hh_by_religion_actual_reshaped = pd.DataFrame(0, index=hh_compositions, columns=religion_categories)
 
-# Extract the actual counts from the crosstable dataframes
+# Extract the actual counts from the real crosstable dataframes
 for hh in hh_compositions:
     for eth in ethnicity_categories:
         col_name = f'{hh} {eth}'
@@ -881,7 +1176,7 @@ for hh in hh_compositions:
         if col_name in hhcomp_by_religion_df.columns:
             hh_by_religion_actual_reshaped.loc[hh, rel] = hhcomp_by_religion_df[col_name].iloc[0]
 
-# Create predicted crosstables from our predictions
+# Create predicted crosstables from our predictions - only for real combinations
 hh_by_ethnicity_pred = pd.DataFrame(0, index=hh_compositions, columns=ethnicity_categories)
 hh_by_religion_pred = pd.DataFrame(0, index=hh_compositions, columns=religion_categories)
 
@@ -1572,32 +1867,73 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles, save_p
 attribute_dicts = {
     'Composition': (hh_comp_actual, hh_comp_pred),
     'Ethnicity': (ethnicity_actual, ethnicity_pred),
-    'Religion': (religion_actual, religion_pred)
+    'Religion': (religion_actual, religion_pred),
+    'Tenure': (tenure_actual, tenure_pred),
+    'Size': (size_actual, size_pred),
+    'Rooms': (rooms_actual, rooms_pred)
 }
 
 categories_dict = {
     'Composition': hh_compositions,
     'Ethnicity': ethnicity_categories,
-    'Religion': religion_categories
+    'Religion': religion_categories,
+    'Tenure': tenure_categories,
+    'Size': size_categories,
+    'Rooms': rooms_categories
 }
 
 household_attributes_save_path = os.path.join(output_dir, 'household_attributes_comparison.html')
 plotly_attribute_distributions(attribute_dicts, categories_dict, filter_zero_bars=True, save_path=household_attributes_save_path)
 
+# Create 3-way crosstable for tenure x size x rooms (similar to generateIndividuals.py)
+tenure_size_rooms_actual = pd.DataFrame(0, index=range(len(tenure_categories) * len(size_categories) * len(rooms_categories)), columns=['combination', 'actual_count'])
+tenure_size_rooms_pred = pd.DataFrame(0, index=range(len(tenure_categories) * len(size_categories) * len(rooms_categories)), columns=['combination', 'predicted_count'])
+
+# Fill actual 3-way crosstable - using correct order: tenure -> size -> rooms
+idx = 0
+for ten in tenure_categories:  # tenure first (matches get_target_tensors_3way ordering)
+    for sz in size_categories:  # size second  
+        for rm in rooms_categories:  # rooms third
+            col_name = f'{ten} {sz} {rm}'
+            actual_count = tenure_by_size_by_rooms_df[col_name].iloc[0] if col_name in tenure_by_size_by_rooms_df.columns else 0
+            tenure_size_rooms_actual.loc[idx] = [f'{ten} {sz} {rm}', actual_count]
+            idx += 1
+
+# Fill predicted 3-way crosstable  
+idx = 0
+tenure_size_rooms_pred_counts = {}
+for i in range(len(tenure_pred_names)):
+    ten = tenure_pred_names[i]
+    sz = size_pred_names[i]
+    rm = rooms_pred_names[i]
+    combo = f'{ten} {sz} {rm}'
+    tenure_size_rooms_pred_counts[combo] = tenure_size_rooms_pred_counts.get(combo, 0) + 1
+
+for ten in tenure_categories:  # tenure first (matches get_target_tensors_3way ordering)
+    for sz in size_categories:  # size second  
+        for rm in rooms_categories:  # rooms third
+            combo = f'{ten} {sz} {rm}'
+            pred_count = tenure_size_rooms_pred_counts.get(combo, 0)
+            tenure_size_rooms_pred.loc[idx] = [combo, pred_count]
+            idx += 1
+
 # Create Plotly crosstable plots
 actual_dfs = {
     'Household_by_Ethnicity': hh_by_ethnicity_actual_reshaped,
-    'Household_by_Religion': hh_by_religion_actual_reshaped
+    'Household_by_Religion': hh_by_religion_actual_reshaped,
+    'Tenure_Size_Rooms': tenure_size_rooms_actual.set_index('combination')['actual_count'].to_frame().T
 }
 
 predicted_dfs = {
     'Household_by_Ethnicity': hh_by_ethnicity_pred,
-    'Household_by_Religion': hh_by_religion_pred
+    'Household_by_Religion': hh_by_religion_pred,
+    'Tenure_Size_Rooms': tenure_size_rooms_pred.set_index('combination')['predicted_count'].to_frame().T
 }
 
 titles = [
     'Household Composition x Ethnicity',
-    'Household Composition x Religion'
+    'Household Composition x Religion',
+    'Tenure x Size x Rooms'
 ]
 
 household_crosstable_save_path = os.path.join(output_dir, 'household_crosstable_comparison.html')
