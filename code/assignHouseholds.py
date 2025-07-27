@@ -102,7 +102,7 @@ print(f"Running Household Assignment Hyperparameter Tuning for area: {selected_a
 # Household size extraction function
 def extract_household_sizes_from_tensor(household_nodes_tensor, device):
     """
-    Extract household sizes from the generated household tensor.
+    Extract household size categories from the generated household tensor.
     
     Args:
         household_nodes_tensor: Tensor with shape (num_households, 6)
@@ -110,7 +110,7 @@ def extract_household_sizes_from_tensor(household_nodes_tensor, device):
         device: PyTorch device for tensor operations
     
     Returns:
-        torch.Tensor: Household sizes as tensor of shape (num_households,)
+        torch.Tensor: Household size category indices as tensor of shape (num_households,)
         bool: True if extraction successful, False if fallback needed
     """
     try:
@@ -130,37 +130,22 @@ def extract_household_sizes_from_tensor(household_nodes_tensor, device):
         if size_category_indices.device != device:
             size_category_indices = size_category_indices.to(device)
         
-        # Define size categories and mapping (consistent with generateHouseholds.py)
+        # Validate that indices are within the expected range (0-3 for 4 categories)
+        valid_indices = (size_category_indices >= 0) & (size_category_indices < 4)
+        if not valid_indices.all():
+            invalid_count = (~valid_indices).sum().item()
+            print(f"Warning: {invalid_count} households have invalid size category indices")
+            # Clamp invalid indices to valid range
+            size_category_indices = torch.clamp(size_category_indices, 0, 3)
+        
+        print(f"Successfully extracted household size categories from tensor. Category distribution:")
+        unique_categories, counts = torch.unique(size_category_indices, return_counts=True)
         size_categories = ['1', '2', '3', '4+']
-        
-        # Define size mapping with weighted distribution for '4+' category
-        def map_size_category_to_actual_size(size_category):
-            """Map size category to actual household size"""
-            if size_category == '4+':
-                # Use weighted distribution for '4+' category based on typical household size patterns
-                # Weights favor smaller sizes within the 4+ range
-                return random.choices([4, 5, 6, 7, 8], weights=[0.4, 0.25, 0.2, 0.1, 0.05])[0]
-            else:
-                return int(size_category)
-        
-        # Convert category indices to actual household sizes
-        household_sizes = torch.zeros_like(size_category_indices, dtype=torch.long, device=device)
-        
-        for i, size_idx in enumerate(size_category_indices):
-            if size_idx < len(size_categories):
-                size_category = size_categories[size_idx]
-                household_sizes[i] = map_size_category_to_actual_size(size_category)
-            else:
-                print(f"Warning: Invalid size category index {size_idx} for household {i}")
-                # Fallback to size 2 for invalid indices
-                household_sizes[i] = 2
-        
-        print(f"Successfully extracted household sizes from tensor. Size distribution:")
-        unique_sizes, counts = torch.unique(household_sizes, return_counts=True)
-        for size, count in zip(unique_sizes.cpu().numpy(), counts.cpu().numpy()):
-            print(f"  Size {size}: {count} households")
+        for cat_idx, count in zip(unique_categories.cpu().numpy(), counts.cpu().numpy()):
+            category_name = size_categories[cat_idx] if cat_idx < len(size_categories) else f"Unknown({cat_idx})"
+            print(f"  Category {cat_idx} ({category_name}): {count} households")
             
-        return household_sizes, True
+        return size_category_indices, True
         
     except Exception as e:
         print(f"Error extracting household sizes from tensor: {e}")
@@ -168,7 +153,7 @@ def extract_household_sizes_from_tensor(household_nodes_tensor, device):
 
 def validate_household_size_extraction(household_nodes_tensor, device):
     """
-    Validate the household size extraction functionality with sample data.
+    Validate the household size category extraction functionality with sample data.
     
     Args:
         household_nodes_tensor: The loaded household tensor
@@ -177,37 +162,39 @@ def validate_household_size_extraction(household_nodes_tensor, device):
     Returns:
         bool: True if validation passes, False otherwise
     """
-    print("\n=== Validating Household Size Extraction ===")
+    print("\n=== Validating Household Size Category Extraction ===")
     
     try:
         # Test the extraction function
-        extracted_sizes, success = extract_household_sizes_from_tensor(household_nodes_tensor, device)
+        extracted_categories, success = extract_household_sizes_from_tensor(household_nodes_tensor, device)
         
         if not success:
-            print("Validation FAILED: Size extraction was not successful")
+            print("Validation FAILED: Size category extraction was not successful")
             return False
         
         # Basic validation checks
         num_households = household_nodes_tensor.size(0)
-        if extracted_sizes.size(0) != num_households:
-            print(f"Validation FAILED: Expected {num_households} sizes, got {extracted_sizes.size(0)}")
+        if extracted_categories.size(0) != num_households:
+            print(f"Validation FAILED: Expected {num_households} categories, got {extracted_categories.size(0)}")
             return False
         
-        # Check if sizes are within reasonable range (1-8)
-        min_size = extracted_sizes.min().item()
-        max_size = extracted_sizes.max().item()
+        # Check if categories are within valid range (0-3 for 4 categories)
+        min_cat = extracted_categories.min().item()
+        max_cat = extracted_categories.max().item()
         
-        if min_size < 1 or max_size > 8:
-            print(f"Validation WARNING: Household sizes outside expected range [1-8]: min={min_size}, max={max_size}")
+        if min_cat < 0 or max_cat > 3:
+            print(f"Validation WARNING: Household size categories outside expected range [0-3]: min={min_cat}, max={max_cat}")
         
         # Check for reasonable distribution
-        unique_sizes, counts = torch.unique(extracted_sizes, return_counts=True)
-        print("Extracted size distribution validation:")
-        for size, count in zip(unique_sizes.cpu().numpy(), counts.cpu().numpy()):
+        unique_categories, counts = torch.unique(extracted_categories, return_counts=True)
+        size_categories = ['1', '2', '3', '4+']
+        print("Extracted size category distribution validation:")
+        for cat_idx, count in zip(unique_categories.cpu().numpy(), counts.cpu().numpy()):
             percentage = (count / num_households) * 100
-            print(f"  Size {size}: {count} households ({percentage:.1f}%)")
+            category_name = size_categories[cat_idx] if cat_idx < len(size_categories) else f"Unknown({cat_idx})"
+            print(f"  Category {cat_idx} ({category_name}): {count} households ({percentage:.1f}%)")
         
-        print("Validation PASSED: Household size extraction is working correctly")
+        print("Validation PASSED: Household size category extraction is working correctly")
         return True
         
     except Exception as e:
@@ -270,6 +257,7 @@ household_nodes = household_nodes.to(device)
 print(f"Moved person_nodes and household_nodes to {device}")
 
 # Define the household composition categories and mapping
+# hh_compositions = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-nC', '1FM-nA', '1FC-0C', '1FC-nC', '1FC-nA', '1FL-nC', '1FL-nA', '1H-nC', '1H-nS', '1H-nE', '1H-nA']
 hh_compositions = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-2C', '1FM-nA', '1FC-0C', '1FC-2C', '1FC-nA', '1FL-nA', '1FL-2C', '1H-nS', '1H-nE', '1H-nA', '1H-2C']
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
 reverse_hh_map = {v: k for k, v in hh_map.items()}  # Reverse mapping to decode
@@ -293,8 +281,8 @@ values_size_na, weights_size_na = zip(*household_size_dist_na.items())
 # two_or_more_hh = {'1FL-2C', '1FL-nA', '1H-2C'}
 
 fixed_hh = {"1PE": 1, "1PA": 1, "1FE": 2, "1FM-0C": 2, "1FC-0C": 2}
-three_or_more_hh = {'1FM-2C', '1FM-nA', '1FC-2C', '1FC-nA'}
-two_or_more_hh = {'1FL-2C', '1FL-nA', '1H-2C', '1H-nS', '1H-nE', '1H-nA'}
+three_or_more_hh = {'1FM-nC', '1FM-nA', '1FC-nC', '1FC-nA'}
+two_or_more_hh = {'1FL-nC', '1FL-nA', '1H-nC', '1H-nS', '1H-nE', '1H-nA'}
 
 def fit_household_size(composition):
     if composition in fixed_hh:
@@ -306,36 +294,88 @@ def fit_household_size(composition):
     else:
         return int(random.choices(values_size_org, weights=weights_size_org)[0].replace('8+', '8'))
 
-# Validate household size extraction functionality
+# Validate household size category extraction functionality
 validation_passed = validate_household_size_extraction(household_nodes, device)
 
-# Try to extract household sizes from the generated household tensor
-household_sizes, extraction_successful = extract_household_sizes_from_tensor(household_nodes, device)
+# Try to extract household size categories from the generated household tensor
+household_size_categories, extraction_successful = extract_household_sizes_from_tensor(household_nodes, device)
 
 if not extraction_successful:
-    print("Falling back to random household size assignment based on composition...")
-    # Fallback: Assign sizes to each household based on its composition (original logic)
-    household_sizes = torch.tensor([fit_household_size(reverse_hh_map[hh_pred[i].item()]) for i in range(len(hh_pred))], dtype=torch.long)
-    household_sizes = household_sizes.to(device)
-    print("Done assigning household sizes using random method")
+    print("Extraction Failed. Exiting...")
+    exit()
+    # print("Falling back to random household size assignment based on composition...")
+    # # Fallback: Assign sizes to each household based on its composition (original logic)
+    # household_sizes = torch.tensor([fit_household_size(reverse_hh_map[hh_pred[i].item()]) for i in range(len(hh_pred))], dtype=torch.long)
+    # household_sizes = household_sizes.to(device)
+    # print("Done assigning household sizes using random method")
 else:
-    print("Done assigning household sizes using tensor extraction method")
-    print(f"Using extracted sizes for {household_sizes.size(0)} households")
+    print("Done assigning household size categories using tensor extraction method")
+    print(f"Using extracted size categories for {household_size_categories.size(0)} households")
+    
+    # Convert size categories to actual sizes for compatibility with existing functions
+    # Map: 0->1, 1->2, 2->3, 3->4 (4+ category becomes 4)
+    household_sizes = household_size_categories + 1  # Convert 0-3 indices to 1-4 sizes
+    print("Converted size categories to actual sizes for compatibility")
+    
+    # Print detailed information about the conversion
+    print(f"Size category distribution:")
+    unique_cats, cat_counts = torch.unique(household_size_categories, return_counts=True)
+    size_categories = ['1', '2', '3', '4+']
+    for cat_idx, count in zip(unique_cats.cpu().numpy(), cat_counts.cpu().numpy()):
+        category_name = size_categories[cat_idx] if cat_idx < len(size_categories) else f"Unknown({cat_idx})"
+        print(f"  Category {cat_idx} ({category_name}): {count} households")
+    
+    print(f"Converted size distribution:")
+    unique_sizes, size_counts = torch.unique(household_sizes, return_counts=True)
+    for size, count in zip(unique_sizes.cpu().numpy(), size_counts.cpu().numpy()):
+        print(f"  Size {size}: {count} households")
 
 # Step 2: Define the GNN model
 class HouseholdAssignmentGNN(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, num_households):
+    def __init__(self, in_channels, hidden_channels, num_households, dropout_rate=0.1):
         super(HouseholdAssignmentGNN, self).__init__()
         self.conv1 = SAGEConv(in_channels, hidden_channels)
-        self.conv3 = SAGEConv(hidden_channels, hidden_channels)  # Added third layer
-        self.fc = torch.nn.Linear(hidden_channels, num_households)
+        self.conv2 = SAGEConv(hidden_channels, hidden_channels)
+        self.conv3 = SAGEConv(hidden_channels, hidden_channels)
+        
+        # Add batch normalization for better training stability
+        self.batch_norm1 = torch.nn.BatchNorm1d(hidden_channels)
+        self.batch_norm2 = torch.nn.BatchNorm1d(hidden_channels)
+        self.batch_norm3 = torch.nn.BatchNorm1d(hidden_channels)
+        
+        # Add dropout for regularization
+        self.dropout = torch.nn.Dropout(dropout_rate)
+        
+        # Enhanced final layer with residual connection
+        self.fc1 = torch.nn.Linear(hidden_channels, hidden_channels)
+        self.fc2 = torch.nn.Linear(hidden_channels, num_households)
+        self.relu = torch.nn.ReLU()
 
     def forward(self, x, edge_index):
-        # GCN layers to process person nodes
-        x = self.conv1(x, edge_index).relu()
-        x = self.conv3(x, edge_index).relu()  # Added third GNN layer
-        # Fully connected layer to output logits for each household
-        out = self.fc(x)
+        # First GCN layer
+        x1 = self.conv1(x, edge_index)
+        x1 = self.batch_norm1(x1)
+        x1 = self.relu(x1)
+        x1 = self.dropout(x1)
+        
+        # Second GCN layer
+        x2 = self.conv2(x1, edge_index)
+        x2 = self.batch_norm2(x2)
+        x2 = self.relu(x2)
+        x2 = self.dropout(x2)
+        
+        # Third GCN layer with residual connection
+        x3 = self.conv3(x2, edge_index)
+        x3 = self.batch_norm3(x3)
+        x3 = self.relu(x3 + x1)  # Residual connection
+        x3 = self.dropout(x3)
+        
+        # Enhanced final layers
+        out = self.fc1(x3)
+        out = self.relu(out)
+        out = self.dropout(out)
+        out = self.fc2(out)
+        
         return out  # Output shape: (num_persons, num_households)
 
 # Define Gumbel-Softmax
@@ -354,14 +394,15 @@ def gumbel_softmax(logits, tau=1.0, hard=False):
 num_persons = person_nodes.size(0)
 num_households = household_sizes.size(0)
 
-# Define the columns for religion and ethnicity 
+# Define the columns for religion, ethnicity, and household composition
 # Based on actual tensor structures from generation scripts:
-# person_nodes: [age, sex, religion, ethnicity, marital] (5 columns)
-# household_nodes: [household_composition, ethnicity, religion] (3 columns)
+# person_nodes: [age, sex, religion, ethnicity, marital, qualification, household_composition] (7 columns)
+# household_nodes: [household_composition, ethnicity, religion, tenure, size, rooms] (6 columns)
 religion_col_persons, religion_col_households = 2, 2
 ethnicity_col_persons, ethnicity_col_households = 3, 1
+household_composition_col_persons, household_composition_col_households = 6, 0
 
-# Create the graph with more flexible edge construction (match on religion or ethnicity)
+# Create the graph with more flexible edge construction (match on religion, ethnicity, or household composition)
 # edge_index_file_path = os.path.join(current_dir, "output" , "edge_index.pt")
 # edge_index_file_path = "./outputs/edge_index.pt"
 edge_index_file_path = os.path.join(current_dir, f"./outputs/assignment_hp_tuning_{selected_area_code}/edge_index.pt")
@@ -378,17 +419,22 @@ else:
     
     # Use context manager for memory optimization during edge creation
     with torch.no_grad():  # Disable gradient computation for memory efficiency
-        # Extract religion and ethnicity columns for efficient comparison
+        # Extract religion, ethnicity, and household composition columns for efficient comparison
         person_religion = person_nodes[:, religion_col_persons]
         person_ethnicity = person_nodes[:, ethnicity_col_persons]
+        person_household_composition = person_nodes[:, household_composition_col_persons]
         
         # Create matrices for pairwise comparison using broadcasting
-        # Shape: (num_persons, num_persons) - True where persons have same religion/ethnicity
+        # Shape: (num_persons, num_persons) - True where persons have same religion/ethnicity/household_composition
         religion_match = person_religion.unsqueeze(1) == person_religion.unsqueeze(0)
         ethnicity_match = person_ethnicity.unsqueeze(1) == person_ethnicity.unsqueeze(0)
+        household_composition_match = person_household_composition.unsqueeze(1) == person_household_composition.unsqueeze(0)
         
-        # Combine matches: True if either religion OR ethnicity matches
-        matches = religion_match | ethnicity_match
+        # Combine matches: True if religion OR ethnicity OR household composition matches
+        # Including household composition in edge creation is crucial for the GNN to learn
+        # to group persons with similar household composition together, which significantly
+        # improves household composition accuracy in the final assignment
+        matches = religion_match | ethnicity_match | household_composition_match
         
         # Create upper triangular mask to avoid duplicate edges (i < j)
         upper_tri_mask = torch.triu(torch.ones(num_persons, num_persons, device=device, dtype=torch.bool), diagonal=1)
@@ -412,8 +458,10 @@ else:
         # Clear intermediate tensors to free memory
         safe_delete_tensor(person_religion)
         safe_delete_tensor(person_ethnicity)
+        safe_delete_tensor(person_household_composition)
         safe_delete_tensor(religion_match)
         safe_delete_tensor(ethnicity_match)
+        safe_delete_tensor(household_composition_match)
         safe_delete_tensor(matches)
         safe_delete_tensor(upper_tri_mask)
         safe_delete_tensor(final_matches)
@@ -438,27 +486,40 @@ else:
 monitor_memory_usage(device, "after edge index creation")
 
 # Compute loss function (as in the original code)
-def compute_loss(assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0):
+def compute_loss(assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0, size_loss_weight=1.0, household_composition_loss_weight=1.0):
     household_counts = assignments.sum(dim=0)  # Sum the soft assignments across households
-    size_loss = F.mse_loss(household_counts.float(), household_sizes.float())  # MSE loss for household size
+    
+    # Normalize household sizes to 0-1 range for better loss balance
+    max_size = household_sizes.max().float()
+    normalized_sizes = household_sizes.float() / max_size
+    normalized_counts = household_counts.float() / max_size
+    size_loss = F.mse_loss(normalized_counts, normalized_sizes) * size_loss_weight
 
     religion_col_persons, religion_col_households = 2, 2
     person_religion = person_nodes[:, religion_col_persons].float()  # Target (ground truth) religion as a float tensor
     predicted_religion_scores = assignments @ household_nodes[:, religion_col_households].float()  # Predicted religion (soft scores)
-    religion_loss = F.mse_loss(predicted_religion_scores, person_religion)  # MSE loss for religion
+    religion_loss = F.mse_loss(predicted_religion_scores, person_religion) * religion_loss_weight
 
     ethnicity_col_persons, ethnicity_col_households = 3, 1
     person_ethnicity = person_nodes[:, ethnicity_col_persons].float()  # Target (ground truth) ethnicity as a float tensor
     predicted_ethnicity_scores = assignments @ household_nodes[:, ethnicity_col_households].float()  # Predicted ethnicity (soft scores)
-    ethnicity_loss = F.mse_loss(predicted_ethnicity_scores, person_ethnicity)  # MSE loss for ethnicity
+    ethnicity_loss = F.mse_loss(predicted_ethnicity_scores, person_ethnicity) * ethnicity_loss_weight
 
-    total_loss = size_loss +  religion_loss +  ethnicity_loss
-    return total_loss, size_loss, religion_loss, ethnicity_loss
+    # Add household composition loss - this is crucial for proper household assignment
+    # Household composition indicates the type of household (e.g., single person, couple with children, etc.)
+    # Matching persons to households with compatible composition significantly improves assignment quality
+    household_composition_col_persons, household_composition_col_households = 6, 0
+    person_household_composition = person_nodes[:, household_composition_col_persons].float()  # Target (ground truth) household composition as a float tensor
+    predicted_household_composition_scores = assignments @ household_nodes[:, household_composition_col_households].float()  # Predicted household composition (soft scores)
+    household_composition_loss = F.mse_loss(predicted_household_composition_scores, person_household_composition) * household_composition_loss_weight
+
+    total_loss = size_loss + religion_loss + ethnicity_loss + household_composition_loss
+    return total_loss, size_loss, religion_loss, ethnicity_loss, household_composition_loss
 
 # Step 4: Hyperparameter tuning setup
-num_epochs = 200  # Number of training epochs
-learning_rates = [0.001]  # Expanded range of learning rates
-hidden_dims = [64]  # Expanded range of hidden dimensions
+num_epochs = 300  # Increased epochs for better convergence
+learning_rates = [0.001]  # Test multiple learning rates
+hidden_dims = [64]  # Test multiple hidden dimensions
 # learning_rates = [0.001, 0.0001, 0.0005]  # Define a range of learning rates
 # hidden_dims = [64, 128, 256]  # Define a range of hidden dimensions
 best_loss = float('inf')  # Initialize best loss to infinity
@@ -488,40 +549,50 @@ best_model_info = {
 def plot_assignment_errors(final_assignments, household_sizes, person_nodes, household_nodes, output_dir):
     """Plot assignment errors similar to assignment_model2.py"""
     
-    # Calculate size errors
+    # Calculate size errors (using category-based comparison)
     predicted_counts = torch.zeros_like(household_sizes, device=household_sizes.device)
     for household_idx in final_assignments:
         predicted_counts[household_idx] += 1
     
-    size_errors = torch.abs(predicted_counts - household_sizes).sum().item()
+    # Convert to categories for error calculation
+    actual_categories = torch.clamp(household_sizes - 1, 0, 3)  # Convert 1-4 sizes to 0-3 categories
+    predicted_categories = torch.clamp(predicted_counts - 1, 0, 3)  # Convert 1-4+ sizes to 0-3 categories
     
-    # Calculate religion and ethnicity errors
+    size_errors = torch.abs(predicted_categories - actual_categories).sum().item()
+    
+    # Calculate religion, ethnicity, and household composition errors
     religion_col_persons, religion_col_households = 2, 2
     ethnicity_col_persons, ethnicity_col_households = 3, 1
+    household_composition_col_persons, household_composition_col_households = 6, 0
     
     religion_errors = 0
     ethnicity_errors = 0
+    household_composition_errors = 0
     
     for person_idx, household_idx in enumerate(final_assignments):
         household_idx = household_idx.item()
         
         person_religion = person_nodes[person_idx, religion_col_persons]
         person_ethnicity = person_nodes[person_idx, ethnicity_col_persons]
+        person_household_composition = person_nodes[person_idx, household_composition_col_persons]
         
         household_religion = household_nodes[household_idx, religion_col_households]
         household_ethnicity = household_nodes[household_idx, ethnicity_col_households]
+        household_composition = household_nodes[household_idx, household_composition_col_households]
         
         if person_religion != household_religion:
             religion_errors += 1
         if person_ethnicity != household_ethnicity:
             ethnicity_errors += 1
+        if person_household_composition != household_composition:
+            household_composition_errors += 1
     
     # Create bar graph
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(15, 6))
     
-    categories = ['Size Errors', 'Religion Errors', 'Ethnicity Errors']
-    error_counts = [size_errors, religion_errors, ethnicity_errors]
-    colors = ['lightcoral', 'skyblue', 'lightgreen']
+    categories = ['Size Errors', 'Religion Errors', 'Ethnicity Errors', 'Household Composition Errors']
+    error_counts = [size_errors, religion_errors, ethnicity_errors, household_composition_errors]
+    colors = ['lightcoral', 'skyblue', 'lightgreen', 'gold']
     
     bars = plt.bar(categories, error_counts, color=colors)
     
@@ -541,10 +612,10 @@ def plot_assignment_errors(final_assignments, household_sizes, person_nodes, hou
     # plt.show()
     print(f"Assignment errors plot saved to: {error_plot_path}")
 
-def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accuracies, output_dir):
-    """Plot accuracy over epochs with religion and ethnicity graphs side by side"""
+def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accuracies, household_composition_accuracies, output_dir):
+    """Plot accuracy over epochs with religion, ethnicity, and household composition graphs"""
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
     
     # Plot (a) Religion
     bars1 = ax1.bar(epoch_numbers[::10], religion_accuracies[::10], color='steelblue', alpha=0.7, width=8)
@@ -572,6 +643,19 @@ def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accu
         if i % 2 == 0:  # Show every other label to avoid crowding
             ax2.text(epoch, acc + 1, f'{acc:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
     
+    # Plot (c) Household Composition
+    bars3 = ax3.bar(epoch_numbers[::10], household_composition_accuracies[::10], color='gold', alpha=0.7, width=8)
+    ax3.set_xlabel('Epochs')
+    ax3.set_ylabel('Percentage of correctly assigned persons (%)')
+    ax3.set_title('(c) Household Composition')
+    ax3.set_ylim(0, 100)
+    ax3.grid(True, alpha=0.3)
+    
+    # Add percentage labels on top of bars (every 10th epoch)
+    for i, (epoch, acc) in enumerate(zip(epoch_numbers[::10], household_composition_accuracies[::10])):
+        if i % 2 == 0:  # Show every other label to avoid crowding
+            ax3.text(epoch, acc + 1, f'{acc:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
     plt.tight_layout()
     
     # Save plot
@@ -580,29 +664,38 @@ def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accu
     # plt.show()
     print(f"Accuracy over epochs plot saved to: {accuracy_plot_path}")
 
-# Household Size Accuracy Function (consistent with original script)
+# Household Size Accuracy Function (updated for 4-category system)
 def calculate_size_distribution_accuracy(assignments, household_sizes):
     """
     Calculate household size distribution accuracy by comparing predicted vs expected size distributions.
-    Uses the same method as the original assignHouseholds script for consistency.
+    Updated to work with the new 4-category system (1, 2, 3, 4+).
     """
     # Step 1: Calculate the predicted sizes (how many people in each household)
     predicted_counts = torch.zeros_like(household_sizes, device=household_sizes.device)
     for household_idx in assignments:
         predicted_counts[household_idx] += 1  # Increment for each assignment
     
-    # Step 2: Clamp both predicted and actual sizes to a maximum of 8
-    predicted_counts_clamped = torch.clamp(predicted_counts, min=1, max=8)
-    household_sizes_clamped = torch.clamp(household_sizes, min=1, max=8)
+    # Step 2: Convert actual sizes to categories for comparison
+    # Map: 1->0, 2->1, 3->2, 4->3 (4+ category is 4, map to 3)
+    actual_categories = torch.clamp(household_sizes - 1, 0, 3)  # Convert 1-4 sizes to 0-3 categories
+    
+    # Step 3: Convert predicted counts to categories
+    # Map: 1->0, 2->1, 3->2, 4+->3 (anything 4 or more maps to category 3)
+    predicted_categories = torch.clamp(predicted_counts - 1, 0, 3)  # Convert 1-4+ sizes to 0-3 categories
+    
+    # Step 4: Calculate bincount of the categories (4 categories: 0, 1, 2, 3)
+    num_categories = 4
+    predicted_distribution = torch.bincount(predicted_categories, minlength=num_categories).float()
+    actual_distribution = torch.bincount(actual_categories, minlength=num_categories).float()
 
-    # Step 3: Calculate bincount of the clamped predicted and actual sizes
-    max_size = 8  # Since we clamped everything above size 8, the max size is now 8
-    predicted_distribution = torch.bincount(predicted_counts_clamped, minlength=max_size).float()
-    actual_distribution = torch.bincount(household_sizes_clamped, minlength=max_size).float()
-
-    # Step 4: Calculate accuracy for each size
+    # Step 5: Calculate accuracy for each category
     accuracies = torch.min(predicted_distribution, actual_distribution) / (actual_distribution + 1e-6)  # Avoid division by 0
-    overall_accuracy = accuracies.mean().item()  # Average accuracy across all household sizes
+    overall_accuracy = accuracies.mean().item()  # Average accuracy across all categories
+    
+    # Debug information (optional - can be removed later)
+    if torch.rand(1).item() < 0.01:  # Only print 1% of the time to avoid spam
+        print(f"Size accuracy debug - Predicted: {predicted_distribution.cpu().numpy()}, Actual: {actual_distribution.cpu().numpy()}")
+        print(f"Category accuracies: {accuracies.cpu().numpy()}, Overall: {overall_accuracy:.4f}")
 
     return overall_accuracy
 
@@ -610,11 +703,13 @@ def calculate_size_distribution_accuracy(assignments, household_sizes):
 def calculate_individual_compliance_accuracy(assignments, person_nodes, household_nodes):
     religion_col_persons, religion_col_households = 2, 2
     ethnicity_col_persons, ethnicity_col_households = 3, 1
+    household_composition_col_persons, household_composition_col_households = 6, 0
 
     total_people = assignments.size(0)
     
     correct_religion_assignments = 0
     correct_ethnicity_assignments = 0
+    correct_household_composition_assignments = 0
 
     # Loop over each person and their assigned household
     for person_idx, household_idx in enumerate(assignments):
@@ -622,9 +717,11 @@ def calculate_individual_compliance_accuracy(assignments, person_nodes, househol
 
         person_religion = person_nodes[person_idx, religion_col_persons]
         person_ethnicity = person_nodes[person_idx, ethnicity_col_persons]
+        person_household_composition = person_nodes[person_idx, household_composition_col_persons]
 
         household_religion = household_nodes[household_idx, religion_col_households]
         household_ethnicity = household_nodes[household_idx, ethnicity_col_households]
+        household_composition = household_nodes[household_idx, household_composition_col_households]
 
         # Check if the person's religion matches the household's religion
         if person_religion == household_religion:
@@ -634,33 +731,40 @@ def calculate_individual_compliance_accuracy(assignments, person_nodes, househol
         if person_ethnicity == household_ethnicity:
             correct_ethnicity_assignments += 1
 
+        # Check if the person's household composition matches the household's composition
+        if person_household_composition == household_composition:
+            correct_household_composition_assignments += 1
+
     religion_compliance = correct_religion_assignments / total_people
     ethnicity_compliance = correct_ethnicity_assignments / total_people
+    household_composition_compliance = correct_household_composition_assignments / total_people
 
-    return religion_compliance, ethnicity_compliance
+    return religion_compliance, ethnicity_compliance, household_composition_compliance
 
 # Combined Accuracy Function
 def calculate_all_accuracies(assignments, person_nodes, household_nodes, household_sizes):
     """
-    Calculate all accuracies: religion, ethnicity, and household size.
+    Calculate all accuracies: religion, ethnicity, household composition, and household size.
     Returns individual accuracies and overall average accuracy.
+    Updated for 4-category household size system.
     """
-    # Calculate religion and ethnicity accuracies
-    religion_compliance, ethnicity_compliance = calculate_individual_compliance_accuracy(
+    # Calculate religion, ethnicity, and household composition accuracies
+    religion_compliance, ethnicity_compliance, household_composition_compliance = calculate_individual_compliance_accuracy(
         assignments, person_nodes, household_nodes
     )
     
-    # Calculate household size distribution accuracy (consistent with original script)
+    # Calculate household size distribution accuracy (updated for 4-category system)
     size_distribution_accuracy = calculate_size_distribution_accuracy(
         assignments, household_sizes
     )
     
-    # Calculate overall average accuracy
-    overall_accuracy = (religion_compliance + ethnicity_compliance + size_distribution_accuracy) / 3.0
+    # Calculate overall average accuracy (now including household composition)
+    overall_accuracy = (religion_compliance + ethnicity_compliance + household_composition_compliance + size_distribution_accuracy) / 4.0
     
     return {
         'religion_compliance': religion_compliance,
-        'ethnicity_compliance': ethnicity_compliance, 
+        'ethnicity_compliance': ethnicity_compliance,
+        'household_composition_compliance': household_composition_compliance,
         'size_distribution_accuracy': size_distribution_accuracy,
         'overall_accuracy': overall_accuracy
     }
@@ -675,7 +779,18 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
     
     model = HouseholdAssignmentGNN(in_channels=person_nodes.size(1), hidden_channels=hidden_channels, num_households=household_sizes.size(0))
     model = model.to(device)  # Move model to GPU
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)  # Added weight decay
+    
+    # Use a simpler scheduler to avoid compatibility issues
+    try:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20)
+        use_scheduler = True
+    except Exception as e:
+        print(f"Warning: Could not create ReduceLROnPlateau scheduler: {e}")
+        print("Continuing without learning rate scheduling...")
+        scheduler = None
+        use_scheduler = False
+    
     tau = 1.0
 
     monitor_memory_usage(device, "after model creation")
@@ -683,6 +798,7 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
     # Track accuracies over epochs and convergence data
     religion_accuracies = []
     ethnicity_accuracies = []
+    household_composition_accuracies = []
     epoch_numbers = []
     
     # Track convergence data for all training runs
@@ -692,8 +808,10 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
         'size_losses': [],
         'religion_losses': [],
         'ethnicity_losses': [],
+        'household_composition_losses': [],
         'religion_accuracies': [],
         'ethnicity_accuracies': [],
+        'household_composition_accuracies': [],
         'size_distribution_accuracies': [],
         'overall_accuracies': [],
         'cumulative_time_seconds': [],
@@ -705,6 +823,10 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
     training_start_time = time.time()
     best_epoch_loss = float('inf')
     best_epoch_state = None
+    
+    # Early stopping
+    patience = 30
+    patience_counter = 0
 
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
@@ -713,15 +835,20 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
         logits = model(person_nodes, edge_index)
         assignments = gumbel_softmax(logits, tau=tau, hard=False)
 
-        total_loss, size_loss, religion_loss, ethnicity_loss = compute_loss(
-            assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0
+        total_loss, size_loss, religion_loss, ethnicity_loss, household_composition_loss = compute_loss(
+            assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0, household_composition_loss_weight=1.0
         )
         total_loss.backward()
         
-        # Clip gradients to avoid exploding gradients - Check if makes any change
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # Clip gradients to avoid exploding gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         optimizer.step()
+        
+        # Update learning rate scheduler if available
+        if use_scheduler and scheduler is not None:
+            scheduler.step(total_loss)
+        
         tau = max(0.5, tau * 0.995)
         
         # Calculate all accuracies for this epoch
@@ -739,8 +866,10 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
         convergence_data['size_losses'].append(size_loss.item())
         convergence_data['religion_losses'].append(religion_loss.item())
         convergence_data['ethnicity_losses'].append(ethnicity_loss.item())
+        convergence_data['household_composition_losses'].append(household_composition_loss.item())
         convergence_data['religion_accuracies'].append(accuracies['religion_compliance'] * 100)
         convergence_data['ethnicity_accuracies'].append(accuracies['ethnicity_compliance'] * 100)
+        convergence_data['household_composition_accuracies'].append(accuracies['household_composition_compliance'] * 100)
         convergence_data['size_distribution_accuracies'].append(accuracies['size_distribution_accuracy'] * 100)
         convergence_data['overall_accuracies'].append(accuracies['overall_accuracy'] * 100)
         convergence_data['epoch_time_seconds'].append(epoch_duration)
@@ -751,11 +880,20 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
         epoch_numbers.append(epoch + 1)
         religion_accuracies.append(accuracies['religion_compliance'] * 100)
         ethnicity_accuracies.append(accuracies['ethnicity_compliance'] * 100)
+        household_composition_accuracies.append(accuracies['household_composition_compliance'] * 100)
         
-        # Store best epoch state
+        # Store best epoch state and early stopping
         if total_loss.item() < best_epoch_loss:
             best_epoch_loss = total_loss.item()
             best_epoch_state = model.state_dict().copy()
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            
+        # Early stopping check
+        if patience_counter >= patience:
+            print(f"\n    Early stopping at epoch {epoch+1} (no improvement for {patience} epochs)")
+            break
         
         # Clear intermediate tensors to free memory
         safe_delete_tensor(logits)
@@ -764,7 +902,14 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
         
         # Print progress every 10 epochs
         if (epoch + 1) % 10 == 0:
-            print(f"\r    Epoch {epoch+1:3d}/{num_epochs} | Total Loss: {total_loss.item():.6f} | Size Loss: {size_loss.item():.6f} | Religion Loss: {religion_loss.item():.6f} | Ethnicity Loss: {ethnicity_loss.item():.6f} | Religion Acc: {accuracies['religion_compliance']*100:.2f}% | Ethnicity Acc: {accuracies['ethnicity_compliance']*100:.2f}% | Size Acc: {accuracies['size_distribution_accuracy']*100:.2f}% | Overall Acc: {accuracies['overall_accuracy']*100:.2f}% | Tau: {tau:.3f}", end="", flush=True)
+            # Calculate loss ratios for debugging
+            total_loss_val = total_loss.item()
+            size_ratio = size_loss.item() / total_loss_val if total_loss_val > 0 else 0
+            religion_ratio = religion_loss.item() / total_loss_val if total_loss_val > 0 else 0
+            ethnicity_ratio = ethnicity_loss.item() / total_loss_val if total_loss_val > 0 else 0
+            household_composition_ratio = household_composition_loss.item() / total_loss_val if total_loss_val > 0 else 0
+            
+            print(f"\r    Epoch {epoch+1:3d}/{num_epochs} | Total: {total_loss_val:.6f} | Size: {size_loss.item():.6f}({size_ratio:.1%}) | Religion: {religion_loss.item():.6f}({religion_ratio:.1%}) | Ethnicity: {ethnicity_loss.item():.6f}({ethnicity_ratio:.1%}) | HH_Comp: {household_composition_loss.item():.6f}({household_composition_ratio:.1%}) | Religion Acc: {accuracies['religion_compliance']*100:.2f}% | Ethnicity Acc: {accuracies['ethnicity_compliance']*100:.2f}% | HH_Comp Acc: {accuracies['household_composition_compliance']*100:.2f}% | Size Acc: {accuracies['size_distribution_accuracy']*100:.2f}% | Overall Acc: {accuracies['overall_accuracy']*100:.2f}% | Tau: {tau:.3f}", end="", flush=True)
             
             # Monitor memory usage every 10 epochs
             monitor_memory_usage(device, f"at epoch {epoch+1}")
@@ -796,7 +941,8 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
             'detailed_accuracies': final_accuracies,
             'epoch_numbers': epoch_numbers.copy(),
             'religion_accuracies': religion_accuracies.copy(),
-            'ethnicity_accuracies': ethnicity_accuracies.copy()
+            'ethnicity_accuracies': ethnicity_accuracies.copy(),
+            'household_composition_accuracies': household_composition_accuracies.copy()
         })
 
     # Clear model and intermediate tensors from GPU memory before returning
@@ -930,22 +1076,40 @@ total_training_time_str = str(timedelta(seconds=int(total_training_time)))
 print(f"Total hyperparameter tuning time: {total_training_time_str}")
 
 # Output the best hyperparameters
-print(f"Best hyperparameters: {best_params} with final loss {best_loss}")
+if best_params:
+    print(f"Best hyperparameters: {best_params} with final loss {best_loss}")
+else:
+    print("No successful training runs completed. No best hyperparameters available.")
+    best_params = {
+        'learning_rate': None,
+        'hidden_channels': None,
+        'religion_compliance': 0.0,
+        'ethnicity_compliance': 0.0,
+        'size_distribution_accuracy': 0.0,
+        'overall_accuracy': 0.0
+    }
+    best_loss = float('inf')
 
 # Save hyperparameter tuning results
 print(f"\nSaving hyperparameter tuning results to: {output_dir}")
 
 # Save basic results as CSV
-hp_results_df = pd.DataFrame(hp_results)
-hp_results_path = os.path.join(output_dir, 'hp_tuning_results.csv')
-hp_results_df.to_csv(hp_results_path, index=False)
-print(f"Basic results saved: {hp_results_path}")
+if hp_results:
+    hp_results_df = pd.DataFrame(hp_results)
+    hp_results_path = os.path.join(output_dir, 'hp_tuning_results.csv')
+    hp_results_df.to_csv(hp_results_path, index=False)
+    print(f"Basic results saved: {hp_results_path}")
+else:
+    print("No results to save - no successful training runs")
 
 # Save detailed results as CSV
-detailed_results_df = pd.DataFrame(detailed_results)
-detailed_results_path = os.path.join(output_dir, 'detailed_hp_results.csv')
-detailed_results_df.to_csv(detailed_results_path, index=False)
-print(f"Detailed results saved: {detailed_results_path}")
+if detailed_results:
+    detailed_results_df = pd.DataFrame(detailed_results)
+    detailed_results_path = os.path.join(output_dir, 'detailed_hp_results.csv')
+    detailed_results_df.to_csv(detailed_results_path, index=False)
+    print(f"Detailed results saved: {detailed_results_path}")
+else:
+    print("No detailed results to save - no successful training runs")
 
 # Save convergence data for all combinations
 if convergence_results:
@@ -961,6 +1125,8 @@ if convergence_results:
     convergence_path = os.path.join(output_dir, 'all_combinations_convergence_data.csv')
     combined_convergence_df.to_csv(convergence_path, index=False)
     print(f"Convergence data for all combinations saved: {convergence_path}")
+else:
+    print("No convergence data to save - no successful training runs")
 
 # Save performance summary
 performance_summary = {
@@ -973,13 +1139,13 @@ performance_summary = {
     'num_epochs_per_combination': num_epochs,
     'learning_rates_tested': learning_rates,
     'hidden_dims_tested': hidden_dims,
-    'best_learning_rate': best_params['learning_rate'],
-    'best_hidden_channels': best_params['hidden_channels'],
+    'best_learning_rate': best_params.get('learning_rate'),
+    'best_hidden_channels': best_params.get('hidden_channels'),
     'best_loss': best_loss,
-    'best_religion_compliance': best_params['religion_compliance'],
-    'best_ethnicity_compliance': best_params['ethnicity_compliance'],
-    'best_size_distribution_accuracy': best_params['size_distribution_accuracy'],
-    'best_overall_accuracy': best_params['overall_accuracy']
+    'best_religion_compliance': best_params.get('religion_compliance', 0.0),
+    'best_ethnicity_compliance': best_params.get('ethnicity_compliance', 0.0),
+    'best_size_distribution_accuracy': best_params.get('size_distribution_accuracy', 0.0),
+    'best_overall_accuracy': best_params.get('overall_accuracy', 0.0)
 }
 
 performance_summary_path = os.path.join(output_dir, 'performance_summary.json')
@@ -992,10 +1158,10 @@ best_params_with_loss = best_params.copy()
 best_params_with_loss['best_loss'] = best_loss
 best_params_with_loss['total_combinations'] = len(hp_results)
 best_params_with_loss['area_code'] = selected_area_code
-best_params_with_loss['religion_accuracy_percent'] = best_params['religion_compliance'] * 100
-best_params_with_loss['ethnicity_accuracy_percent'] = best_params['ethnicity_compliance'] * 100
-best_params_with_loss['size_distribution_accuracy_percent'] = best_params['size_distribution_accuracy'] * 100
-best_params_with_loss['overall_accuracy_percent'] = best_params['overall_accuracy'] * 100
+best_params_with_loss['religion_accuracy_percent'] = best_params.get('religion_compliance', 0.0) * 100
+best_params_with_loss['ethnicity_accuracy_percent'] = best_params.get('ethnicity_compliance', 0.0) * 100
+best_params_with_loss['size_distribution_accuracy_percent'] = best_params.get('size_distribution_accuracy', 0.0) * 100
+best_params_with_loss['overall_accuracy_percent'] = best_params.get('overall_accuracy', 0.0) * 100
 best_params_with_loss['total_training_time'] = total_training_time_str
 
 best_params_path = os.path.join(output_dir, 'best_hyperparameters.json')
@@ -1010,64 +1176,76 @@ print(f"\n{'='*60}")
 print(f"USING BEST MODEL RESULTS FOR PLOTTING (NO RETRAINING)")
 print(f"{'='*60}")
 
-# Print best model information
-print("\nBest Model Information:")
-print(f"Learning Rate: {best_model_info['lr']}")
-print(f"Hidden Channels: {best_model_info['hidden_channels']}")
-print(f"Best Loss: {best_model_info['loss']:.6f}")
-print(f"Best Overall Accuracy: {best_model_info['accuracy']:.4f}")
+# Check if we have valid best model information
+if best_model_info['model_state'] is not None:
+    # Print best model information
+    print("\nBest Model Information:")
+    print(f"Learning Rate: {best_model_info['lr']}")
+    print(f"Hidden Channels: {best_model_info['hidden_channels']}")
+    print(f"Best Loss: {best_model_info['loss']:.6f}")
+    print(f"Best Overall Accuracy: {best_model_info['accuracy']:.4f}")
 
-# Extract saved results from best model
-final_assignments = best_model_info['assignments']
-epoch_numbers = best_model_info['epoch_numbers']
-religion_accuracies = best_model_info['religion_accuracies']
-ethnicity_accuracies = best_model_info['ethnicity_accuracies']
-best_convergence_data = best_model_info['convergence_data']
-final_accuracies = best_model_info['detailed_accuracies']
+    # Extract saved results from best model
+    final_assignments = best_model_info['assignments']
+    epoch_numbers = best_model_info['epoch_numbers']
+    religion_accuracies = best_model_info['religion_accuracies']
+    ethnicity_accuracies = best_model_info['ethnicity_accuracies']
+    best_convergence_data = best_model_info['convergence_data']
+    final_accuracies = best_model_info['detailed_accuracies']
 
-print(f"\nUsing saved best model results (no retraining needed)")
+    print(f"\nUsing saved best model results (no retraining needed)")
 
-# Generate plots using saved data
-print("\nGenerating plots...")
-plot_assignment_errors(final_assignments, household_sizes, person_nodes, household_nodes, output_dir)
-plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accuracies, output_dir)
+    # Generate plots using saved data
+    print("\nGenerating plots...")
+    plot_assignment_errors(final_assignments, household_sizes, person_nodes, household_nodes, output_dir)
+    plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accuracies, household_composition_accuracies, output_dir)
+else:
+    print("\nNo successful training runs completed. Cannot generate plots.")
+    print("Please check the error messages above and fix the issues before running again.")
+    exit(1)
 
 # Save final assignment results
-print(f"\nSaving final assignment results to {output_dir}")
+if best_model_info['model_state'] is not None:
+    print(f"\nSaving final assignment results to {output_dir}")
 
-# Save final assignments tensor
-final_assignments_path = os.path.join(output_dir, 'final_assignments.pt')
-torch.save(final_assignments.cpu(), final_assignments_path)
+    # Save final assignments tensor
+    final_assignments_path = os.path.join(output_dir, 'final_assignments.pt')
+    torch.save(final_assignments.cpu(), final_assignments_path)
 
-# Save convergence data from best model run
-best_convergence_df = pd.DataFrame(best_convergence_data)
-best_convergence_path = os.path.join(output_dir, 'best_model_convergence_data.csv')
-best_convergence_df.to_csv(best_convergence_path, index=False)
-print(f"Best model convergence data saved: {best_convergence_path}")
+    # Save convergence data from best model run
+    best_convergence_df = pd.DataFrame(best_convergence_data)
+    best_convergence_path = os.path.join(output_dir, 'best_model_convergence_data.csv')
+    best_convergence_df.to_csv(best_convergence_path, index=False)
+    print(f"Best model convergence data saved: {best_convergence_path}")
 
-# Update best parameters with final results from best model run
-best_params_with_loss['final_religion_compliance'] = final_accuracies['religion_compliance']
-best_params_with_loss['final_ethnicity_compliance'] = final_accuracies['ethnicity_compliance']
-best_params_with_loss['final_size_distribution_accuracy'] = final_accuracies['size_distribution_accuracy']
-best_params_with_loss['final_overall_accuracy'] = final_accuracies['overall_accuracy']
-best_params_with_loss['final_religion_accuracy_percent'] = final_accuracies['religion_compliance'] * 100
-best_params_with_loss['final_ethnicity_accuracy_percent'] = final_accuracies['ethnicity_compliance'] * 100
-best_params_with_loss['final_size_distribution_accuracy_percent'] = final_accuracies['size_distribution_accuracy'] * 100
-best_params_with_loss['final_overall_accuracy_percent'] = final_accuracies['overall_accuracy'] * 100
+    # Update best parameters with final results from best model run
+    best_params_with_loss['final_religion_compliance'] = final_accuracies['religion_compliance']
+    best_params_with_loss['final_ethnicity_compliance'] = final_accuracies['ethnicity_compliance']
+    best_params_with_loss['final_household_composition_compliance'] = final_accuracies['household_composition_compliance']
+    best_params_with_loss['final_size_distribution_accuracy'] = final_accuracies['size_distribution_accuracy']
+    best_params_with_loss['final_overall_accuracy'] = final_accuracies['overall_accuracy']
+    best_params_with_loss['final_religion_accuracy_percent'] = final_accuracies['religion_compliance'] * 100
+    best_params_with_loss['final_ethnicity_accuracy_percent'] = final_accuracies['ethnicity_compliance'] * 100
+    best_params_with_loss['final_household_composition_accuracy_percent'] = final_accuracies['household_composition_compliance'] * 100
+    best_params_with_loss['final_size_distribution_accuracy_percent'] = final_accuracies['size_distribution_accuracy'] * 100
+    best_params_with_loss['final_overall_accuracy_percent'] = final_accuracies['overall_accuracy'] * 100
 
-# Re-save updated best parameters
-with open(best_params_path, 'w') as f:
-    json.dump(best_params_with_loss, f, indent=4)
+    # Re-save updated best parameters
+    with open(best_params_path, 'w') as f:
+        json.dump(best_params_with_loss, f, indent=4)
 
-print(f"\nFinal Results with Best Hyperparameters:")
-print(f"  Learning Rate: {best_model_info['lr']}")
-print(f"  Hidden Channels: {best_model_info['hidden_channels']}")
-print(f"  Final Loss: {best_model_info['loss']:.6f}")
-print(f"  Religion Compliance: {final_accuracies['religion_compliance'] * 100:.2f}%")
-print(f"  Ethnicity Compliance: {final_accuracies['ethnicity_compliance'] * 100:.2f}%")
-print(f"  Size Distribution Accuracy: {final_accuracies['size_distribution_accuracy'] * 100:.2f}%")
-print(f"  Overall Accuracy: {final_accuracies['overall_accuracy'] * 100:.2f}%")
-print(f"  Results and plots saved to: {output_dir}")
+    print(f"\nFinal Results with Best Hyperparameters:")
+    print(f"  Learning Rate: {best_model_info['lr']}")
+    print(f"  Hidden Channels: {best_model_info['hidden_channels']}")
+    print(f"  Final Loss: {best_model_info['loss']:.6f}")
+    print(f"  Religion Compliance: {final_accuracies['religion_compliance'] * 100:.2f}%")
+    print(f"  Ethnicity Compliance: {final_accuracies['ethnicity_compliance'] * 100:.2f}%")
+    print(f"  Household Composition Compliance: {final_accuracies['household_composition_compliance'] * 100:.2f}%")
+    print(f"  Size Distribution Accuracy: {final_accuracies['size_distribution_accuracy'] * 100:.2f}%")
+    print(f"  Overall Accuracy: {final_accuracies['overall_accuracy'] * 100:.2f}%")
+    print(f"  Results and plots saved to: {output_dir}")
+else:
+    print(f"\nNo final results to save - no successful training runs")
 
 # Comprehensive final cleanup
 print("\nPerforming final memory cleanup...")

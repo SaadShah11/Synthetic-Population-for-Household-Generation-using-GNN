@@ -23,8 +23,8 @@ from typing import Dict, List, Tuple
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define file paths
-input_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex.csv')
-output_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_Updated.csv')
+input_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_UpdatedColumns.csv')
+output_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_UpdatedColumns_Modified.csv')
 
 # Define the target age groups (same as used in qualification data)
 target_age_groups = ['0_4', '5_7', '8_9', '10_14', '15', '16_17', '18_19', '20_24', '25_29', '30_34', 
@@ -39,14 +39,14 @@ household_composition_codes = [
     '1PA',    # One person household: Other
     '1FE',    # One family only: All aged 65 and over
     '1FM-0C', # One family only: Married or same-sex civil partnership couple: No children
-    '1FM-nC', # One family only: Married or same-sex civil partnership couple: Dependent children
+    '1FM-2C', # One family only: Married or same-sex civil partnership couple: Dependent children
     '1FM-nA', # One family only: Married or same-sex civil partnership couple: All children non-dependent
     '1FC-0C', # One family only: Cohabiting couple: No children
-    '1FC-nC', # One family only: Cohabiting couple: Dependent children
+    '1FC-2C', # One family only: Cohabiting couple: Dependent children
     '1FC-nA', # One family only: Cohabiting couple: All children non-dependent
-    '1FL-nC', # One family only: Lone parent: Dependent children
+    '1FL-2C', # One family only: Lone parent: Dependent children
     '1FL-nA', # One family only: Lone parent: All children non-dependent
-    '1H-nC',  # Other household types: With dependent children
+    '1H-2C',  # Other household types: With dependent children
     '1H-nS',  # Other household types: All full-time students
     '1H-nE',  # Other household types: All aged 65 and over
     '1H-nA'   # Other household types: Other

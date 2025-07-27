@@ -180,12 +180,13 @@ ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/
 religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Religion.csv'))
 marital_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Marital.csv'))
 qualification_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Qualification.csv'))
-household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_people.csv'))
+household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_people_Updated.csv'))
+# household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_people.csv'))
 ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge.csv'))
 religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge.csv'))
 marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified.csv'))
 qualification_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/QualificationBySexByAgeModified.csv'))
-household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Updated.csv'))
+household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_UpdatedColumns_Modified.csv'))
 # ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge_sorted.csv'))
 # religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge_sorted.csv'))
 # marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified_sorted.csv'))
@@ -215,7 +216,8 @@ ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A
 religion_categories = ['C','B','H','J','M','S','O','N','NS']
 marital_categories = ['Single','Married','Partner','Separated','Divorced','Widowed']
 qualification_categories = ['L0', 'L1', 'L2', 'LA', 'L3', 'L4', 'LO']
-household_composition_categories = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-nC', '1FM-nA', '1FC-0C', '1FC-nC', '1FC-nA', '1FL-nC', '1FL-nA', '1H-nC', '1H-nS', '1H-nE', '1H-nA']
+# household_composition_categories = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-nC', '1FM-nA', '1FC-0C', '1FC-nC', '1FC-nA', '1FL-nC', '1FL-nA', '1H-nC', '1H-nS', '1H-nE', '1H-nA']
+household_composition_categories = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-2C', '1FM-nA', '1FC-0C', '1FC-2C', '1FC-nA', '1FL-nA', '1FL-2C', '1H-nS', '1H-nE', '1H-nA', '1H-2C']
 
 # Encode the categories to indices
 age_map = {category: i for i, category in enumerate(age_groups)}
