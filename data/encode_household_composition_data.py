@@ -23,8 +23,8 @@ from typing import Dict, List, Tuple
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define file paths
-input_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_UpdatedColumns.csv')
-output_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_UpdatedColumns_Modified.csv')
+input_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main.csv')
+output_file_path = os.path.join(current_dir, 'preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified.csv')
 
 # Define the target age groups (same as used in qualification data)
 target_age_groups = ['0_4', '5_7', '8_9', '10_14', '15', '16_17', '18_19', '20_24', '25_29', '30_34', 
