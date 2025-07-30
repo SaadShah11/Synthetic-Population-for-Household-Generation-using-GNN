@@ -4,8 +4,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from torch_geometric.nn import SAGEConv, GraphNorm
-from torch.nn import CrossEntropyLoss
+from torch_geometric.nn import SAGEConv, GraphNorm, GATConv              # add to your imports
+from torch.nn import CrossEntropyLoss, Embedding, Linear, Dropout, ReLU, Module
 import random
 import time
 from datetime import timedelta
@@ -180,12 +180,15 @@ ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/
 religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Religion.csv'))
 marital_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Marital.csv'))
 qualification_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Qualification.csv'))
-household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_People_Main_Modified.csv'))
-# household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_people.csv'))
+# household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_People_Main_Adjusted.csv'))
+# household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_People_Main_Modified.csv'))
+household_composition_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_people_Main_Modified.csv'))
 ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge.csv'))
 religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge.csv'))
 marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified.csv'))
 qualification_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/QualificationBySexByAgeModified.csv'))
+# household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Adjusted.csv'))
+# household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified.csv'))
 household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified.csv'))
 # ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge_sorted.csv'))
 # religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge_sorted.csv'))
@@ -350,102 +353,76 @@ targets.append(
     )
 )
 
-class EnhancedGNNModelWithMLP(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, mlp_hidden_dim, out_channels_age, out_channels_sex, out_channels_ethnicity, out_channels_religion, out_channels_marital, out_channels_qualification, out_channels_household_composition, dropout_rate=0.5):
-        super(EnhancedGNNModelWithMLP, self).__init__()
-        
-        # GraphSAGE layers
-        self.conv1 = SAGEConv(in_channels, hidden_channels)
-        self.conv2 = SAGEConv(hidden_channels, hidden_channels)
-        self.conv3 = SAGEConv(hidden_channels, hidden_channels)
-        self.conv4 = SAGEConv(hidden_channels, hidden_channels)
-        
-        # Batch normalization
-        self.batch_norm1 = GraphNorm(hidden_channels)
-        self.batch_norm2 = GraphNorm(hidden_channels)
-        self.batch_norm3 = GraphNorm(hidden_channels)
-        self.batch_norm4 = GraphNorm(hidden_channels)
-        
-        # Dropout layer
-        self.dropout = torch.nn.Dropout(0.08)
-        
-        # MLP for each output attribute
-        self.mlp_age = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_age)
-        )
-        
-        self.mlp_sex = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_sex)
-        )
-        
-        self.mlp_ethnicity = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_ethnicity)
-        )
-        
-        self.mlp_religion = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_religion)
-        )
-        
-        self.mlp_marital = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_marital)
-        )
-        
-        self.mlp_qualification = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_qualification)
-        )
-        
-        self.mlp_household_composition = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, mlp_hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(mlp_hidden_dim, out_channels_household_composition)
+###############################################################################
+#  NEW ARCHITECTURE  –  paste this after the imports and before train_model()
+###############################################################################
+class AttentiveMultiTaskGNN(Module):
+    """
+    Multi–head Graph‑Attention network for synthetic‑individual generation.
+    * node_ids  : long tensor (same as your current x)                 [N]
+    * edge_index: bidirectional edges person ↔ attribute categories    [2,E]
+    The first `num_persons` nodes are persons – identical assumption
+    to your existing code, so nothing else in the script has to change.
+    """
+    def __init__(
+        self,
+        num_nodes: int,
+        num_persons: int,
+        embed_dim: int,
+        hidden_dim: int,
+        heads: int,
+        out_dims: dict[str, int],      # {"age":22, "sex":2, ...}
+        dropout: float = 0.5
+    ):
+        super().__init__()
+        self.num_persons = num_persons
+
+        # 1️⃣  Learnable embedding for every node‑id  --------------------------
+        self.embedding = Embedding(num_nodes, embed_dim)
+
+        # 2️⃣  Three GAT layers with residual connections  --------------------
+        self.gat1 = GATConv(embed_dim,  hidden_dim, heads=heads,
+                            concat=False, dropout=dropout)
+        self.norm1 = GraphNorm(hidden_dim)
+
+        self.gat2 = GATConv(hidden_dim, hidden_dim, heads=heads,
+                            concat=False, dropout=dropout)
+        self.norm2 = GraphNorm(hidden_dim)
+
+        self.gat3 = GATConv(hidden_dim, hidden_dim, heads=heads,
+                            concat=False, dropout=dropout)
+        self.norm3 = GraphNorm(hidden_dim)
+
+        # 3️⃣  Shared MLP trunk (optional but helps)  -------------------------
+        self.trunk = torch.nn.Sequential(
+            Linear(hidden_dim, hidden_dim),
+            ReLU(),
+            Dropout(dropout)
         )
 
+        # 4️⃣  Light task‑specific heads  -------------------------------------
+        self.heads = torch.nn.ModuleDict({
+            name: Linear(hidden_dim, out_dim)
+            for name, out_dim in out_dims.items()
+        })
+
+    # -------------------------------------------------------------------------
     def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        
-        # Pass through GraphSAGE layers
-        x = self.conv1(x, edge_index)
-        x = self.batch_norm1(x)
-        x = F.relu(x)
-        # x = self.dropout(x)
-        
-        x = self.conv2(x, edge_index)
-        x = self.batch_norm2(x)
-        x = F.relu(x)
-        # x = self.dropout(x)
-        
-        x = self.conv3(x, edge_index)
-        x = self.batch_norm3(x)
-        x = F.relu(x)
-        # x = self.dropout(x)
-        
-        x = self.conv4(x, edge_index)
-        x = self.batch_norm4(x)
-        x = F.relu(x)
-        # x = self.dropout(x)
-        
-        # Pass the node embeddings through the MLPs for final attribute predictions
-        age_out = self.mlp_age(x)
-        sex_out = self.mlp_sex(x)
-        ethnicity_out = self.mlp_ethnicity(x)
-        religion_out = self.mlp_religion(x)
-        marital_out = self.mlp_marital(x)
-        qualification_out = self.mlp_qualification(x)
-        household_composition_out = self.mlp_household_composition(x)
-        
-        return age_out, sex_out, ethnicity_out, religion_out, marital_out, qualification_out, household_composition_out
+        x = self.embedding(data.x.squeeze().long())      # [N, embed_dim]
+
+        h1 = F.relu(self.norm1(self.gat1(x, data.edge_index)))
+        h1 = h1 + x                                      # residual
+
+        h2 = F.relu(self.norm2(self.gat2(h1, data.edge_index)))
+        h2 = h2 + h1                                     # residual
+
+        h3 = F.relu(self.norm3(self.gat3(h2, data.edge_index)))
+        h   = h3 + h2                                    # residual
+
+        # Use only *person* node embeddings for prediction
+        z = self.trunk(h[:self.num_persons])
+
+        return {name: head(z) for name, head in self.heads.items()}
 
 # Custom loss function
 def custom_loss_function(first_out, second_out, third_out, y_first, y_second, y_third):
@@ -518,9 +495,11 @@ def calculate_rmse(generated_counts, target_counts):
 # Define the hyperparameters to tune
 # learning_rates = [0.001, 0.0005, 0.0001]
 learning_rates = [0.001]
-hidden_channel_options = [64, 128, 256]
-mlp_hidden_dim = 128
-num_epochs = 2500
+hidden_channel_options = [256]
+# hidden_channel_options = [64, 128, 256]
+mlp_hidden_dim = 256
+# mlp_hidden_dim = 128
+num_epochs = 3000  # Increased epochs for better household composition learning
 
 # Results storage
 results = []
@@ -609,297 +588,314 @@ def calculate_distribution_task_accuracy(pred_1, pred_2, pred_3, target_combinat
         return max(0.0, r2.item())  # Ensure non-negative and convert to Python float
     else:
         return 1.0
+    
+def train_model(lr, hidden_channels, num_epochs, data, targets,
+                embed_dim=64, heads=4, dropout=0.50):
+    """
+    hidden_channels → treated as the GAT hidden dimension so that
+    the call‑site loop (learning_rates × hidden_channel_options) stays unchanged.
+    """
+    # ─────────────────────────────────────────────────────────────────────────
+    # Build output‑dimension dictionary once
+    # ─────────────────────────────────────────────────────────────────────────
+    out_dims = {
+        "age"                 : len(age_groups),
+        "sex"                 : len(sex_categories),
+        "ethnicity"           : len(ethnicity_categories),
+        "religion"            : len(religion_categories),
+        "marital"             : len(marital_categories),
+        "qualification"       : len(qualification_categories),
+        "household_composition": len(household_composition_categories)
+    }
 
-# Define a function to train the model
-def train_model(lr, hidden_channels, num_epochs, data, targets):
-    # Initialize model, optimizer, and loss functions
-    model = EnhancedGNNModelWithMLP(
-        in_channels=node_features.size(1),
-        hidden_channels=hidden_channels,
-        mlp_hidden_dim=mlp_hidden_dim,
-        out_channels_age=len(age_groups),
-        out_channels_sex=len(sex_categories),
-        out_channels_ethnicity=len(ethnicity_categories),
-        out_channels_religion=len(religion_categories),
-        out_channels_marital=len(marital_categories),
-        out_channels_qualification=len(qualification_categories),
-        out_channels_household_composition=len(household_composition_categories)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Instantiate model + optimizer
+    # ─────────────────────────────────────────────────────────────────────────
+    model = AttentiveMultiTaskGNN(
+        num_nodes=node_features.size(0),
+        num_persons=num_persons,
+        embed_dim=hidden_channels,
+        hidden_dim=hidden_channels,
+        heads=heads,
+        out_dims=out_dims,
+        dropout=dropout
     ).to(device)
-    
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    
-    # Track best epoch state
+
+    # Track best epoch weights
     best_epoch_loss = float('inf')
     best_epoch_state = None
-    loss_data = {}
-    accuracy_data = {}
-    
-    # Storage for tracking metrics across epochs
-    epoch_accuracies = []
-    convergence_data = {
-        'epochs': [],
-        'losses': [],
-        'accuracies': [],
-        'cumulative_time_seconds': [],
-        'epoch_time_seconds': []
-    }
-    
-    # Start timing for epoch-wise tracking
-    training_start_time = time.time()
 
+    # Convergence tracking
+    convergence_data = {
+        'epochs': [], 'losses': [], 'accuracies': [],
+        'cumulative_time_seconds': [], 'epoch_time_seconds': []
+    }
+    training_start = time.time()
+    epoch_acc_history = []
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Training loop
+    # ─────────────────────────────────────────────────────────────────────────
     for epoch in range(num_epochs):
-        epoch_start_time = time.time()
-        
-        model.train()  # Set model to training mode
-        optimizer.zero_grad()  # Clear gradients
+        ep_start = time.time()
+        model.train()
+        optimizer.zero_grad()
 
         # Forward pass
-        age_out, sex_out, ethnicity_out, religion_out, marital_out, qualification_out, household_composition_out = model(data)
+        outputs = model(data)
+        outputs = {k: v[:num_persons] for k, v in outputs.items()}
 
-        out = {}
-        out['age'] = age_out[:num_persons]  # Only take person nodes' outputs
-        out['sex'] = sex_out[:num_persons]
-        out['ethnicity'] = ethnicity_out[:num_persons]
-        out['religion'] = religion_out[:num_persons]
-        out['marital'] = marital_out[:num_persons]
-        out['qualification'] = qualification_out[:num_persons]
-        out['household_composition'] = household_composition_out[:num_persons]
-
-        loss = 0
-        
-        # Calculate losses for all target combinations
-        for i in range(len(targets)):
-            current_loss = custom_loss_function(
-                out[targets[i][0][0]], out[targets[i][0][1]], out[targets[i][0][2]],
-                targets[i][1][0], targets[i][1][1], targets[i][1][2]
+        # Multi‑task loss
+        loss = 0.0
+        for (a1, a2, a3), (y1, y2, y3) in targets:
+            loss += custom_loss_function(
+                outputs[a1], outputs[a2], outputs[a3],
+                y1, y2, y3
             )
-            loss += current_loss
-            
-        # Calculate accuracy only every 100 epochs to speed up training
-        if (epoch + 1) % 100 == 0:
-            epoch_task_accuracies = []
-            for i in range(len(targets)):
-                # Calculate distribution-based accuracy for this task
-                pred_1 = out[targets[i][0][0]].argmax(dim=1)
-                pred_2 = out[targets[i][0][1]].argmax(dim=1)
-                pred_3 = out[targets[i][0][2]].argmax(dim=1)
-                
-                # Get the corresponding actual cross-table
-                if i == 0:  # sex-age-ethnicity
-                    actual_crosstable = ethnic_by_sex_by_age_df
-                elif i == 1:  # sex-age-marital  
-                    actual_crosstable = marital_by_sex_by_age_df
-                elif i == 2:  # sex-age-religion
-                    actual_crosstable = religion_by_sex_by_age_df
-                else:  # sex-age-qualification
-                    actual_crosstable = qualification_by_sex_by_age_df
-                
-                task_distribution_accuracy = calculate_distribution_task_accuracy(
-                    pred_1, pred_2, pred_3, targets[i][0], actual_crosstable
-                )
-                epoch_task_accuracies.append(task_distribution_accuracy)
 
-            # Calculate average accuracy for this epoch
-            avg_epoch_accuracy = sum(epoch_task_accuracies) / len(epoch_task_accuracies)
-            epoch_accuracies.append(avg_epoch_accuracy)
-            
-            # Print metrics every 100 epochs
-            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}, Distribution Accuracy: {avg_epoch_accuracy:.4f}')
-            
-        # Store best epoch state
+        # Accuracy every 100 epochs for speed
+        if (epoch + 1) % 100 == 0:
+            task_acc = []
+            name_map = {
+                0: "Sex‑Age‑Ethnicity",
+                1: "Sex‑Age‑Marital",
+                2: "Sex‑Age‑Religion",
+                3: "Sex‑Age‑Qualification",
+                4: "Sex‑Age‑Household"
+            }
+
+            for i, ((a1, a2, a3), _) in enumerate(targets):
+                p1, p2, p3 = [outputs[a].argmax(1) for a in (a1, a2, a3)]
+                actual_ct = [
+                    ethnic_by_sex_by_age_df,
+                    marital_by_sex_by_age_df,
+                    religion_by_sex_by_age_df,
+                    qualification_by_sex_by_age_df,
+                    household_composition_by_sex_by_age_df
+                ][i]
+
+                acc = calculate_distribution_task_accuracy(
+                        p1, p2, p3, (a1, a2, a3), actual_ct)
+                task_acc.append(acc)
+
+            avg_acc = sum(task_acc) / len(task_acc)
+            epoch_acc_history.append(avg_acc)
+
+            print(f"\nEpoch {epoch+1:>4}/{num_epochs} "
+                  f" | loss: {loss.item():.4f} | dist‑acc: {avg_acc:.4f}")
+
+        # Track best epoch
         if loss.item() < best_epoch_loss:
             best_epoch_loss = loss.item()
             best_epoch_state = model.state_dict().copy()
 
-        # Backward pass and optimization
+        # Back‑prop
         loss.backward()
         optimizer.step()
-        
-        # Calculate epoch timing
-        epoch_end_time = time.time()
-        epoch_duration = epoch_end_time - epoch_start_time
-        cumulative_time = epoch_end_time - training_start_time
-        
-        # Store loss data for each epoch
-        loss_data[epoch] = loss.item()
-        
-        # Store convergence data
+
+        # Timing + convergence log
+        ep_end = time.time()
         convergence_data['epochs'].append(epoch + 1)
         convergence_data['losses'].append(loss.item())
-        convergence_data['epoch_time_seconds'].append(epoch_duration)
-        convergence_data['cumulative_time_seconds'].append(cumulative_time)
-        
-        # Store accuracy data (only when calculated)
-        if (epoch + 1) % 100 == 0:
-            convergence_data['accuracies'].append(avg_epoch_accuracy)
-        else:
-            convergence_data['accuracies'].append(None)  # Placeholder for missing accuracy
+        convergence_data['accuracies'].append(avg_acc if (epoch + 1) % 100 == 0 else None)
+        convergence_data['epoch_time_seconds'].append(ep_end - ep_start)
+        convergence_data['cumulative_time_seconds'].append(ep_end - training_start)
 
-    # Calculate average accuracy across all epochs
-    average_accuracy = sum(epoch_accuracies) / len(epoch_accuracies)
-            
-    # Load best epoch state for evaluation
+    # ─────────────────────────────────────────────────────────────────────────
+    # FINAL evaluation using best epoch weights
+    # ─────────────────────────────────────────────────────────────────────────
     model.load_state_dict(best_epoch_state)
-
-    # Evaluate accuracy after training
     model.eval()
     with torch.no_grad():
-        age_out, sex_out, ethnicity_out, religion_out, marital_out, qualification_out, household_composition_out = model(data)
-        
-        out = {}
-        out['age'] = age_out[:num_persons]
-        out['sex'] = sex_out[:num_persons]
-        out['ethnicity'] = ethnicity_out[:num_persons]
-        out['religion'] = religion_out[:num_persons]
-        out['marital'] = marital_out[:num_persons]
-        out['qualification'] = qualification_out[:num_persons]
-        out['household_composition'] = household_composition_out[:num_persons]
-        
-        age_pred = out['age'].argmax(dim=1)
-        sex_pred = out['sex'].argmax(dim=1)
-        ethnicity_pred = out['ethnicity'].argmax(dim=1)
-        religion_pred = out['religion'].argmax(dim=1)
-        marital_pred = out['marital'].argmax(dim=1)
-        qualification_pred = out['qualification'].argmax(dim=1)
-        household_composition_pred = out['household_composition'].argmax(dim=1)
+        outputs = model(data)
+        outputs = {k: v[:num_persons] for k, v in outputs.items()}
+        preds   = {k: v.argmax(1) for k, v in outputs.items()}
 
-        # Calculate distribution-based accuracy across all tasks
-        net_accuracy = 0
-        final_task_accuracies = {}
-        
-        for i in range(len(targets)):
-            pred_1 = out[targets[i][0][0]].argmax(dim=1)
-            pred_2 = out[targets[i][0][1]].argmax(dim=1)
-            pred_3 = out[targets[i][0][2]].argmax(dim=1)
-            
-            # Get the corresponding actual cross-table
-            if i == 0:  # sex-age-ethnicity
-                actual_crosstable = ethnic_by_sex_by_age_df
-            elif i == 1:  # sex-age-marital  
-                actual_crosstable = marital_by_sex_by_age_df
-            elif i == 2:  # sex-age-religion
-                actual_crosstable = religion_by_sex_by_age_df
-            elif i == 3:  # sex-age-qualification
-                actual_crosstable = qualification_by_sex_by_age_df
-            else:  # sex-age-household_composition
-                actual_crosstable = household_composition_by_sex_by_age_df
-            
-            # Calculate distribution-based accuracy (R²)
-            task_distribution_accuracy = calculate_distribution_task_accuracy(
-                pred_1, pred_2, pred_3, targets[i][0], actual_crosstable
-            )
-            
-            net_accuracy += task_distribution_accuracy
-            task_name = '_'.join(targets[i][0])
-            final_task_accuracies[task_name] = task_distribution_accuracy * 100
-        
-        final_accuracy = net_accuracy / len(targets)
-        
-        # Print final task accuracies
-        print(f"\n=== DISTRIBUTION-BASED ACCURACY RESULTS ===")
-        for task, acc in final_task_accuracies.items():
-            print(f"{task} distribution accuracy (R²): {acc:.2f}%")
-        print(f"Overall distribution accuracy: {final_accuracy*100:.2f}%")
-        
-        # Update best model info if this model performs better
-        global best_model_info
-        if final_accuracy > best_model_info['accuracy'] or (final_accuracy == best_model_info['accuracy'] and best_epoch_loss < best_model_info['loss']):
-            best_model_info.update({
-                'model_state': best_epoch_state,
-                'loss': best_epoch_loss,
-                'accuracy': final_accuracy,
-                'predictions': (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred),
-                'lr': lr,
-                'hidden_channels': hidden_channels,
-                'convergence_data': convergence_data
-            })
+        final_task_acc = {}
+        net_acc = 0.0
+        for i, (cats, _) in enumerate(targets):
+            a1, a2, a3 = cats
+            p1, p2, p3 = preds[a1], preds[a2], preds[a3]
 
-        # Return the final loss, average accuracy across epochs, final accuracies, and convergence data
-        return best_epoch_loss, average_accuracy, final_accuracy, (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred), convergence_data
+            actual_ct = [
+                ethnic_by_sex_by_age_df,
+                marital_by_sex_by_age_df,
+                religion_by_sex_by_age_df,
+                qualification_by_sex_by_age_df,
+                household_composition_by_sex_by_age_df
+            ][i]
+
+            acc = calculate_distribution_task_accuracy(
+                    p1, p2, p3, cats, actual_ct)
+            final_task_acc["_".join(cats)] = acc * 100
+            net_acc += acc
+
+        final_accuracy = net_acc / len(targets)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Store / return results exactly like original signature
+    # ─────────────────────────────────────────────────────────────────────────
+    predictions_tuple = (
+        preds['sex'],
+        preds['age'],
+        preds['ethnicity'],
+        preds['religion'],
+        preds['marital'],
+        preds['qualification'],
+        preds['household_composition']
+    )
+
+    # Debug: Print final results
+    print(f"\n=== FINAL TRAINING RESULTS ===")
+    print(f"Best epoch loss: {best_epoch_loss:.4f}")
+    print(f"Final accuracy: {final_accuracy:.4f}")
+    print(f"Predictions shape: {len(predictions_tuple)}")
+    for i, pred in enumerate(predictions_tuple):
+        print(f"  Prediction {i}: {pred.shape}")
+
+    return (best_epoch_loss,
+            sum(epoch_acc_history)/len(epoch_acc_history) if epoch_acc_history else 0,
+            final_accuracy,
+            predictions_tuple,
+            convergence_data)
 
 # Run the grid search over hyperparameters
 total_start_time = time.time()
 time_results = []
+# ─────────────────────────────────────────────────────────────────────────────
+#  Hyper-parameter grid search  (AttentiveMultiTaskGNN version)
+# ─────────────────────────────────────────────────────────────────────────────
+results        = []
+time_results   = []
+total_start_ts = time.time()
+
+# Helper: look-up tables for category lists
+category_lists = {
+    'sex'                 : sex_categories,
+    'age'                 : age_groups,
+    'ethnicity'           : ethnicity_categories,
+    'religion'            : religion_categories,
+    'marital'             : marital_categories,
+    'qualification'       : qualification_categories,
+    'household_composition': household_composition_categories
+}
+
+# Ground-truth crosstables in the same order as `targets`
+actual_ctables = [
+    ethnic_by_sex_by_age_df,
+    marital_by_sex_by_age_df,
+    religion_by_sex_by_age_df,
+    qualification_by_sex_by_age_df,
+    household_composition_by_sex_by_age_df
+]
 
 for lr in learning_rates:
     for hidden_channels in hidden_channel_options:
-        print(f"Training with lr={lr}, hidden_channels={hidden_channels}")
-        start_time = time.time()
-        final_loss, average_accuracy, final_accuracy, predictions, convergence_data = train_model(lr, hidden_channels, num_epochs, data, targets)
-        end_time = time.time()
-        train_time = end_time - start_time
-        train_time_str = str(timedelta(seconds=int(train_time)))
 
-        # After training, evaluate RMSE for this run (not just best model)
-        # Use the same logic as in the best model evaluation
-        # Evaluate predictions for this run
-        sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred = predictions
-        net_rmse = 0
-        for i in range(len(targets)):
-            pred_1 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred][['sex','age','ethnicity','religion','marital','qualification','household_composition'].index(targets[i][0][0])]
-            pred_2 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred][['sex','age','ethnicity','religion','marital','qualification','household_composition'].index(targets[i][0][1])]
-            pred_3 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred][['sex','age','ethnicity','religion','marital','qualification','household_composition'].index(targets[i][0][2])]
-            if i == 0:
-                actual_crosstable = ethnic_by_sex_by_age_df
-            elif i == 1:
-                actual_crosstable = marital_by_sex_by_age_df
-            elif i == 2:
-                actual_crosstable = religion_by_sex_by_age_df
-            elif i == 3:
-                actual_crosstable = qualification_by_sex_by_age_df
-            else:
-                actual_crosstable = household_composition_by_sex_by_age_df
-            size_1 = len(sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else (marital_categories if targets[i][0][0]=='marital' else (qualification_categories if targets[i][0][0]=='qualification' else household_composition_categories))))))
-            size_2 = len(age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else (marital_categories if targets[i][0][1]=='marital' else (qualification_categories if targets[i][0][1]=='qualification' else household_composition_categories))))))
-            size_3 = len(ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (qualification_categories if targets[i][0][2]=='qualification' else (household_composition_categories if targets[i][0][2]=='household_composition' else (sex_categories if targets[i][0][2]=='sex' else age_groups))))))
-            pred_counts = torch.bincount(pred_2 * (size_1 * size_3) + pred_1 * size_3 + pred_3, minlength=size_1*size_2*size_3).cpu().numpy()
-            actual_counts = []
-            cats_1 = sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else (marital_categories if targets[i][0][0]=='marital' else (qualification_categories if targets[i][0][0]=='qualification' else household_composition_categories)))))
-            cats_2 = age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else (marital_categories if targets[i][0][1]=='marital' else (qualification_categories if targets[i][0][1]=='qualification' else household_composition_categories)))))
-            cats_3 = ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (qualification_categories if targets[i][0][2]=='qualification' else (household_composition_categories if targets[i][0][2]=='household_composition' else (sex_categories if targets[i][0][2]=='sex' else age_groups)))))
-            for cat2 in cats_2:
-                for cat1 in cats_1:
-                    for cat3 in cats_3:
-                        col = f'{cat1} {cat2} {cat3}'
-                        actual_counts.append(actual_crosstable[col].iloc[0] if col in actual_crosstable.columns else 0)
-            pred_dict = {j: pred_counts[j] for j in range(len(pred_counts))}
-            actual_dict = {j: actual_counts[j] for j in range(len(actual_counts))}
-            task_rmse = calculate_rmse(pred_dict, actual_dict)
-            net_rmse += task_rmse
-        overall_rmse = net_rmse / len(targets)
+        print(f"\n────────────────  Training  lr={lr}  hidden={hidden_channels}  ────────────────")
+        run_start_ts = time.time()
 
-        results.append({
-            'learning_rate': lr,
-            'hidden_channels': hidden_channels,
-            'final_loss': final_loss,
-            'average_accuracy': final_accuracy,
-            'training_time': train_time_str,
-            'rmse': overall_rmse
-        })
-        
-        # Store timing results
-        time_results.append({
-            'learning_rate': lr,
-            'hidden_channels': hidden_channels,
-            'training_time': train_time_str
-        })
-        
-        # Store performance data
-        performance_data = {
-            'area_code': selected_area_code,
-            'num_persons': num_persons,
-            'training_time_seconds': train_time,
-            'learning_rate': lr,
-            'hidden_channels': hidden_channels,
-            'final_accuracy': final_accuracy,
-            'rmse': best_model_info.get('rmse', None)
+        # Train once
+        (final_loss,
+         avg_dist_acc,
+         final_dist_acc,
+         predictions,          # tuple of 7 tensors
+         convergence_data) = train_model(
+            lr, hidden_channels, num_epochs, data, targets
+        )
+
+        # ---------------------------------------------------------------------
+        #  RMSE evaluation for this run
+        # ---------------------------------------------------------------------
+        preds = {
+            'sex'                 : predictions[0].cpu(),
+            'age'                 : predictions[1].cpu(),
+            'ethnicity'           : predictions[2].cpu(),
+            'religion'            : predictions[3].cpu(),
+            'marital'             : predictions[4].cpu(),
+            'qualification'       : predictions[5].cpu(),
+            'household_composition': predictions[6].cpu()
         }
 
-        # Print the results for the current run
-        print(f"Finished training with lr={lr}, hidden_channels={hidden_channels}")
-        print(f"Final Loss: {final_loss}, Average Distribution Accuracy: {average_accuracy:.4f}, Final Distribution Accuracy: {final_accuracy:.4f}")
-        print(f"Training time: {train_time_str}")
+        rmse_sum = 0.0
+        for idx, (attr_combo, _) in enumerate(targets):
+            a1, a2, a3 = attr_combo
+            p1, p2, p3 = preds[a1], preds[a2], preds[a3]
+
+            s1, s2, s3 = (len(category_lists[a1]),
+                          len(category_lists[a2]),
+                          len(category_lists[a3]))
+
+            combo_idx   = p2 * (s1 * s3) + p1 * s3 + p3
+            pred_counts = torch.bincount(combo_idx,
+                                         minlength=s1*s2*s3).numpy()
+
+            actual_vals = []
+            for cat2 in category_lists[a2]:
+                for cat1 in category_lists[a1]:
+                    for cat3 in category_lists[a3]:
+                        col = f'{cat1} {cat2} {cat3}'
+                        actual_vals.append(
+                            actual_ctables[idx][col].iloc[0]
+                            if col in actual_ctables[idx].columns else 0
+                        )
+            actual_vals = np.array(actual_vals)
+            rmse_sum   += np.sqrt(np.mean((pred_counts - actual_vals) ** 2))
+
+        overall_rmse = rmse_sum / len(targets)
+
+        # ---------------------------------------------------------------------
+        #  Book-keeping
+        # ---------------------------------------------------------------------
+        run_time_sec   = time.time() - run_start_ts
+        run_time_human = str(timedelta(seconds=int(run_time_sec)))
+
+        results.append({
+            'learning_rate'   : lr,
+            'hidden_channels' : hidden_channels,
+            'final_loss'      : final_loss,
+            'average_accuracy': avg_dist_acc,
+            'final_accuracy'  : final_dist_acc,
+            'training_time'   : run_time_human,
+            'rmse'            : overall_rmse
+        })
+
+        time_results.append({
+            'learning_rate'   : lr,
+            'hidden_channels' : hidden_channels,
+            'training_time'   : run_time_human
+        })
+
+        # Saved later (after the loop) exactly as in the original script
+        performance_data = {
+            'area_code'             : selected_area_code,
+            'num_persons'           : num_persons,
+            'training_time_seconds' : run_time_sec,
+            'learning_rate'         : lr,
+            'hidden_channels'       : hidden_channels,
+            'final_accuracy'        : final_dist_acc,
+            'rmse'                  : overall_rmse
+        }
+
+        print(f"✓ done | loss={final_loss:.4f} "
+              f"| avg-acc={avg_dist_acc:.4f} "
+              f"| final-acc={final_dist_acc:.4f} "
+              f"| RMSE={overall_rmse:.4f} "
+              f"| time={run_time_human}")
+
+        # Update best model info if this model performs better
+        if final_dist_acc > best_model_info['accuracy'] or (final_dist_acc == best_model_info['accuracy'] and final_loss < best_model_info['loss']):
+            best_model_info.update({
+                'loss': final_loss,
+                'accuracy': final_dist_acc,
+                'predictions': predictions,
+                'lr': lr,
+                'hidden_channels': hidden_channels,
+                'convergence_data': convergence_data
+            })
+            print(f"✓ New best model! Accuracy: {final_dist_acc:.4f}")
 
 # Calculate total training time
 total_end_time = time.time()
@@ -926,14 +922,26 @@ os.makedirs(output_dir, exist_ok=True)
 # Save best model state
 # torch.save(best_model_info['model_state'], os.path.join(output_dir, 'best_individual_model_state.pt'))
 
-# Save best model predictions
-best_predictions = {
-    'sex_pred': best_model_info['predictions'][0].cpu().numpy(),
-    'age_pred': best_model_info['predictions'][1].cpu().numpy(),
-    'ethnicity_pred': best_model_info['predictions'][2].cpu().numpy(),
-    'religion_pred': best_model_info['predictions'][3].cpu().numpy(),
-    'marital_pred': best_model_info['predictions'][4].cpu().numpy()
-}
+# Save best model predictions with error handling
+if best_model_info['predictions'] is not None:
+    best_predictions = {
+        'sex_pred': best_model_info['predictions'][0].cpu().numpy(),
+        'age_pred': best_model_info['predictions'][1].cpu().numpy(),
+        'ethnicity_pred': best_model_info['predictions'][2].cpu().numpy(),
+        'religion_pred': best_model_info['predictions'][3].cpu().numpy(),
+        'marital_pred': best_model_info['predictions'][4].cpu().numpy()
+    }
+else:
+    print("Warning: No predictions available from training. Model may have failed to train.")
+    # Create dummy predictions to prevent errors
+    dummy_pred = torch.zeros(num_persons, dtype=torch.long)
+    best_predictions = {
+        'sex_pred': dummy_pred.cpu().numpy(),
+        'age_pred': dummy_pred.cpu().numpy(),
+        'ethnicity_pred': dummy_pred.cpu().numpy(),
+        'religion_pred': dummy_pred.cpu().numpy(),
+        'marital_pred': dummy_pred.cpu().numpy()
+    }
 # np.save(os.path.join(output_dir, 'best_individual_model_predictions.npy'), best_predictions)
 
 # Add best_model column to results_df using best_model_info
@@ -964,8 +972,15 @@ best_config = {
 # with open(os.path.join(output_dir, 'best_individual_model_config.json'), 'w') as f:
 #     json.dump(best_config, f, indent=4)
 
-# Extract the best model's predictions for visualization
-sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred = best_model_info['predictions']
+# Extract the best model's predictions for visualization with error handling
+if best_model_info['predictions'] is not None:
+    sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred, qualification_pred, household_composition_pred = best_model_info['predictions']
+else:
+    print("Error: No predictions available. Model training may have failed.")
+    print("Best model info:", best_model_info)
+    # Create dummy predictions to prevent errors
+    dummy_pred = torch.zeros(num_persons, dtype=torch.long)
+    sex_pred = age_pred = ethnicity_pred = religion_pred = marital_pred = qualification_pred = household_composition_pred = dummy_pred
 
 # Create person tensor with attributes matching original format
 # Expected format: [age, sex, religion, ethnicity, marital, qualification, household_composition] (7 columns)
