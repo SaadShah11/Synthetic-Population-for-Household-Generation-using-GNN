@@ -519,7 +519,7 @@ def compute_loss(assignments, household_sizes, person_nodes, household_nodes, re
 # Step 4: Hyperparameter tuning setup
 num_epochs = 300  # Increased epochs for better convergence
 learning_rates = [0.001]  # Test multiple learning rates
-hidden_dims = [64]  # Test multiple hidden dimensions
+hidden_dims = [256]  # Test multiple hidden dimensions
 # learning_rates = [0.001, 0.0001, 0.0005]  # Define a range of learning rates
 # hidden_dims = [64, 128, 256]  # Define a range of hidden dimensions
 best_loss = float('inf')  # Initialize best loss to infinity
@@ -1190,6 +1190,7 @@ if best_model_info['model_state'] is not None:
     epoch_numbers = best_model_info['epoch_numbers']
     religion_accuracies = best_model_info['religion_accuracies']
     ethnicity_accuracies = best_model_info['ethnicity_accuracies']
+    household_composition_accuracies = best_model_info['household_composition_accuracies']
     best_convergence_data = best_model_info['convergence_data']
     final_accuracies = best_model_info['detailed_accuracies']
 

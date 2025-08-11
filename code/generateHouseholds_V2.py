@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import SAGEConv, GraphNorm, GATConv
+from torch_geometric.utils import add_self_loops
 import random
 import json
 import time
@@ -42,6 +43,16 @@ device = torch.device('cuda' if torch.cuda.is_available() else
 print(f"Using device: {device}")
 
 torch.set_printoptions(edgeitems=torch.inf)
+
+# Reproducibility
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 def create_geo_plot_trace(selected_area_code, current_dir):
     """
@@ -303,6 +314,13 @@ rooms_nodes = torch.tensor([[rooms_map[rooms]] for rooms in rooms_categories], d
 # Combine all nodes into a single tensor
 node_features = torch.cat([households_nodes, ethnicity_nodes, religion_nodes, tenure_nodes, size_nodes, rooms_nodes], dim=0).to(device)
 
+# Build probability vectors strictly in declared category order (normalized by total households)
+ethnicity_prob_list = (ethnicity_df[ethnicity_categories].iloc[0] / num_households).tolist()
+religion_prob_list  = (religion_df[religion_categories].iloc[0]   / num_households).tolist()
+tenure_prob_list    = (tenure_df[tenure_categories].iloc[0]       / num_households).tolist()
+size_prob_list      = (hh_size_df[size_categories].iloc[0]        / num_households).tolist()
+rooms_prob_list     = (rooms_df[rooms_categories].iloc[0]         / num_households).tolist()
+
 # Edge index generation
 def generate_edge_index(num_households):
     edge_index = []
@@ -319,13 +337,27 @@ def generate_edge_index(num_households):
     rooms_start_idx = size_start_idx + num_sizes
 
     for i in range(num_households):
-        # Randomly select an ethnicity and religion
-        ethnicity_category = random.choice(range(ethnicity_start_idx, ethnicity_start_idx + num_ethnicities))
-        religion_category = random.choice(range(religion_start_idx, religion_start_idx + num_religions))
-        # Randomly select new attributes
-        tenure_category = random.choice(range(tenure_start_idx, tenure_start_idx + num_tenures))
-        size_category = random.choice(range(size_start_idx, size_start_idx + num_sizes))
-        rooms_category = random.choice(range(rooms_start_idx, rooms_start_idx + num_rooms))
+        # Weighted sampling based on area marginals
+        ethnicity_category = random.choices(
+            range(ethnicity_start_idx, ethnicity_start_idx + num_ethnicities),
+            weights=ethnicity_prob_list, k=1
+        )[0]
+        religion_category = random.choices(
+            range(religion_start_idx, religion_start_idx + num_religions),
+            weights=religion_prob_list, k=1
+        )[0]
+        tenure_category = random.choices(
+            range(tenure_start_idx, tenure_start_idx + num_tenures),
+            weights=tenure_prob_list, k=1
+        )[0]
+        size_category = random.choices(
+            range(size_start_idx, size_start_idx + num_sizes),
+            weights=size_prob_list, k=1
+        )[0]
+        rooms_category = random.choices(
+            range(rooms_start_idx, rooms_start_idx + num_rooms),
+            weights=rooms_prob_list, k=1
+        )[0]
         
         # Append edges for the selected categories
         edge_index.append([i, ethnicity_category])
@@ -341,8 +373,13 @@ def generate_edge_index(num_households):
 # Generate edge index
 edge_index = generate_edge_index(num_households)
 
-# Create the data object for PyTorch Geometric
-data = Data(x=node_features, edge_index=edge_index).to(device)
+# Make edges bidirectional and add self-loops
+total_nodes = node_features.size(0)
+edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)
+edge_index, _ = add_self_loops(edge_index, num_nodes=total_nodes)
+
+# Create the data object for PyTorch Geometric with unique node IDs as features
+data = Data(x=torch.arange(total_nodes, device=device), edge_index=edge_index).to(device)
 
 # Enhanced GNN Model
 class AttentiveMultiTaskGNN(torch.nn.Module):

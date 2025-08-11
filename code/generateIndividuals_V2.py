@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import SAGEConv, GraphNorm, GATConv              # add to your imports
+from torch_geometric.utils import add_self_loops
 from torch.nn import CrossEntropyLoss, Embedding, Linear, Dropout, ReLU, Module
 import random
 import time
@@ -36,6 +37,16 @@ device = torch.device('cuda' if torch.cuda.is_available() else
                       'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 
                       'cpu')
 print(f"Using device: {device}")
+
+# Reproducibility
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 def create_geo_plot_trace(selected_area_code, current_dir):
     """
@@ -263,14 +274,14 @@ household_composition_nodes = torch.tensor([[household_composition_map[household
 # Combine all nodes into a single tensor
 node_features = torch.cat([person_nodes, age_nodes, sex_nodes, ethnicity_nodes, religion_nodes, marital_nodes, qualification_nodes, household_composition_nodes], dim=0).to(device)
 
-# Calculate the distribution for age categories
-age_probabilities = age_df.drop(columns = ["geography code", "total"]) / num_persons
-sex_probabilities = sex_df.drop(columns = ["geography code", "total"]) / num_persons
-ethnicity_probabilities = ethnicity_df.drop(columns = ["geography code", "total"]) / num_persons
-religion_probabilities = religion_df.drop(columns = ["geography code", "total"]) / num_persons
-marital_probabilities = marital_df.drop(columns = ["geography code", "total"]) / num_persons
-qualification_probabilities = qualification_df.drop(columns = ["geography code", "total"]) / num_persons
-household_composition_probabilities = household_composition_df.drop(columns = ["geography code", "total"]) / num_persons
+# Calculate probability vectors strictly in declared category order
+age_prob_list = (age_df[age_groups].iloc[0] / num_persons).tolist()
+sex_prob_list = (sex_df[sex_categories].iloc[0] / num_persons).tolist()
+ethnicity_prob_list = (ethnicity_df[ethnicity_categories].iloc[0] / num_persons).tolist()
+religion_prob_list = (religion_df[religion_categories].iloc[0] / num_persons).tolist()
+marital_prob_list = (marital_df[marital_categories].iloc[0] / num_persons).tolist()
+qualification_prob_list = (qualification_df[qualification_categories].iloc[0] / num_persons).tolist()
+household_composition_prob_list = (household_composition_df[household_composition_categories].iloc[0] / num_persons).tolist()
 
 # New function to generate edge index
 def generate_edge_index(num_persons):
@@ -282,15 +293,6 @@ def generate_edge_index(num_persons):
     marital_start_idx = religion_start_idx + len(religion_categories)
     qualification_start_idx = marital_start_idx + len(marital_categories)
     household_composition_start_idx = qualification_start_idx + len(qualification_categories)
-
-    # Convert the probability series to a list of probabilities for sampling
-    age_prob_list = age_probabilities.values.tolist()[0]
-    sex_prob_list = sex_probabilities.values.tolist()[0]
-    ethnicity_prob_list = ethnicity_probabilities.values.tolist()[0]
-    religion_prob_list = religion_probabilities.values.tolist()[0]
-    marital_prob_list = marital_probabilities.values.tolist()[0]
-    qualification_prob_list = qualification_probabilities.values.tolist()[0]
-    household_composition_prob_list = household_composition_probabilities.values.tolist()[0]
 
     for i in range(num_persons):
         # Sample the categories using weighted random sampling
@@ -317,8 +319,13 @@ def generate_edge_index(num_persons):
 # Generate edge index using the new function
 edge_index = generate_edge_index(num_persons)
 
-# Create the data object for PyTorch Geometric
-data = Data(x=node_features, edge_index=edge_index).to(device)
+# Make edges bidirectional and add self-loops
+total_nodes = node_features.size(0)
+edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)
+edge_index, _ = add_self_loops(edge_index, num_nodes=total_nodes)
+
+# Create the data object for PyTorch Geometric with unique node IDs as features
+data = Data(x=torch.arange(total_nodes, device=device), edge_index=edge_index).to(device)
 
 # Get target tensors
 targets = []
@@ -1544,18 +1551,18 @@ def plotly_crosstable_comparison(
             row=1, col=1
         )
         
-        # Add area code label below the geo plot
-        fig.add_annotation(
-            text=f"Area Code: {selected_area_code}",
-            xref="paper", yref="paper",
-            x=0.50, y=0.7,  # Global position centered below the larger geo plot
-            xanchor="center", yanchor="top",
-            showarrow=False,
-            font=dict(size=12, color="black"),
-            bgcolor="rgba(255,255,255,0.8)",
-            bordercolor="black",
-            borderwidth=1
-        )
+        # # Add area code label below the geo plot
+        # fig.add_annotation(
+        #     text=f"Area Code: {selected_area_code}",
+        #     xref="paper", yref="paper",
+        #     x=0.50, y=0.7,  # Global position centered below the larger geo plot
+        #     xanchor="center", yanchor="top",
+        #     showarrow=False,
+        #     font=dict(size=12, color="black"),
+        #     bgcolor="rgba(255,255,255,0.8)",
+        #     bordercolor="black",
+        #     borderwidth=1
+        # )
     
     # Update layout with proper sizing
     fig.update_layout(
