@@ -332,7 +332,7 @@ else:
 
 # Step 2: Define the GNN model
 class HouseholdAssignmentGNN(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, num_households, dropout_rate=0.1):
+    def __init__(self, in_channels, hidden_channels, num_households, dropout_rate=0.05):
         super(HouseholdAssignmentGNN, self).__init__()
         self.conv1 = SAGEConv(in_channels, hidden_channels)
         self.conv2 = SAGEConv(hidden_channels, hidden_channels)
@@ -487,39 +487,58 @@ monitor_memory_usage(device, "after edge index creation")
 
 # Compute loss function (as in the original code)
 def compute_loss(assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0, size_loss_weight=1.0, household_composition_loss_weight=1.0):
-    household_counts = assignments.sum(dim=0)  # Sum the soft assignments across households
-    
-    # Normalize household sizes to 0-1 range for better loss balance
-    max_size = household_sizes.max().float()
-    normalized_sizes = household_sizes.float() / max_size
-    normalized_counts = household_counts.float() / max_size
-    size_loss = F.mse_loss(normalized_counts, normalized_sizes) * size_loss_weight
+    household_counts = assignments.sum(dim=0)  # Expected people per household (soft)
 
+    # Size loss with 4 categories (1,2,3,4) where 4 represents 4+ but is treated as 4
+    sizes_float = household_sizes.float()        # targets: 1..4
+    pred_counts_capped = torch.clamp(household_counts, max=4.0)
+    size_loss = F.mse_loss(pred_counts_capped, sizes_float) * size_loss_weight
+
+    # Categorical attribute alignment via NLL over assignment mass for matching classes
+    eps = 1e-8
+
+    # Religion
     religion_col_persons, religion_col_households = 2, 2
-    person_religion = person_nodes[:, religion_col_persons].float()  # Target (ground truth) religion as a float tensor
-    predicted_religion_scores = assignments @ household_nodes[:, religion_col_households].float()  # Predicted religion (soft scores)
-    religion_loss = F.mse_loss(predicted_religion_scores, person_religion) * religion_loss_weight
+    y_religion = person_nodes[:, religion_col_persons].long()
+    num_rel_classes = int(torch.max(torch.stack([
+        y_religion.max(), household_nodes[:, religion_col_households].long().max()
+    ])).item()) + 1
+    H_rel_onehot = F.one_hot(household_nodes[:, religion_col_households].long(), num_classes=num_rel_classes).float()
+    P_rel = assignments @ H_rel_onehot  # [num_persons, C]
+    rel_match_prob = P_rel[torch.arange(P_rel.size(0), device=P_rel.device), y_religion]
+    religion_loss = (-torch.log(rel_match_prob + eps)).mean() * religion_loss_weight
 
+    # Ethnicity
     ethnicity_col_persons, ethnicity_col_households = 3, 1
-    person_ethnicity = person_nodes[:, ethnicity_col_persons].float()  # Target (ground truth) ethnicity as a float tensor
-    predicted_ethnicity_scores = assignments @ household_nodes[:, ethnicity_col_households].float()  # Predicted ethnicity (soft scores)
-    ethnicity_loss = F.mse_loss(predicted_ethnicity_scores, person_ethnicity) * ethnicity_loss_weight
+    y_eth = person_nodes[:, ethnicity_col_persons].long()
+    num_eth_classes = int(torch.max(torch.stack([
+        y_eth.max(), household_nodes[:, ethnicity_col_households].long().max()
+    ])).item()) + 1
+    H_eth_onehot = F.one_hot(household_nodes[:, ethnicity_col_households].long(), num_classes=num_eth_classes).float()
+    P_eth = assignments @ H_eth_onehot
+    eth_match_prob = P_eth[torch.arange(P_eth.size(0), device=P_eth.device), y_eth]
+    ethnicity_loss = (-torch.log(eth_match_prob + eps)).mean() * ethnicity_loss_weight
 
-    # Add household composition loss - this is crucial for proper household assignment
-    # Household composition indicates the type of household (e.g., single person, couple with children, etc.)
-    # Matching persons to households with compatible composition significantly improves assignment quality
+    # Household composition
     household_composition_col_persons, household_composition_col_households = 6, 0
-    person_household_composition = person_nodes[:, household_composition_col_persons].float()  # Target (ground truth) household composition as a float tensor
-    predicted_household_composition_scores = assignments @ household_nodes[:, household_composition_col_households].float()  # Predicted household composition (soft scores)
-    household_composition_loss = F.mse_loss(predicted_household_composition_scores, person_household_composition) * household_composition_loss_weight
+    y_hh = person_nodes[:, household_composition_col_persons].long()
+    num_hh_classes = int(torch.max(torch.stack([
+        y_hh.max(), household_nodes[:, household_composition_col_households].long().max()
+    ])).item()) + 1
+    H_hh_onehot = F.one_hot(household_nodes[:, household_composition_col_households].long(), num_classes=num_hh_classes).float()
+    P_hh = assignments @ H_hh_onehot
+    hh_match_prob = P_hh[torch.arange(P_hh.size(0), device=P_hh.device), y_hh]
+    household_composition_loss = (-torch.log(hh_match_prob + eps)).mean() * household_composition_loss_weight
 
     total_loss = size_loss + religion_loss + ethnicity_loss + household_composition_loss
     return total_loss, size_loss, religion_loss, ethnicity_loss, household_composition_loss
 
 # Step 4: Hyperparameter tuning setup
-num_epochs = 300  # Increased epochs for better convergence
-learning_rates = [0.001]  # Test multiple learning rates
-hidden_dims = [256]  # Test multiple hidden dimensions
+# num_epochs = 20  # Increased epochs for better convergence
+num_epochs = 400  # Increased epochs for better convergence
+learning_rates = [0.005]  # Test multiple learning rates
+# hidden_dims = [256]  # Test multiple hidden dimensions
+hidden_dims = [64]  # Test multiple hidden dimensions
 # learning_rates = [0.001, 0.0001, 0.0005]  # Define a range of learning rates
 # hidden_dims = [64, 128, 256]  # Define a range of hidden dimensions
 best_loss = float('inf')  # Initialize best loss to infinity
@@ -542,7 +561,8 @@ best_model_info = {
     'detailed_accuracies': None,
     'epoch_numbers': None,
     'religion_accuracies': None,
-    'ethnicity_accuracies': None
+    'ethnicity_accuracies': None,
+    'stopping_epoch': None
 }
 
 # Plotting functions
@@ -615,7 +635,8 @@ def plot_assignment_errors(final_assignments, household_sizes, person_nodes, hou
 def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accuracies, household_composition_accuracies, output_dir):
     """Plot accuracy over epochs with religion, ethnicity, and household composition graphs"""
     
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
+    # Make plot vertically shorter
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 4))
     
     # Plot (a) Religion
     bars1 = ax1.bar(epoch_numbers[::10], religion_accuracies[::10], color='steelblue', alpha=0.7, width=8)
@@ -625,10 +646,10 @@ def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accu
     ax1.set_ylim(0, 100)
     ax1.grid(True, alpha=0.3)
     
-    # Add percentage labels on top of bars (every 10th epoch)
+    # Add percentage labels rotated 90° just above each bar (every 10th epoch)
     for i, (epoch, acc) in enumerate(zip(epoch_numbers[::10], religion_accuracies[::10])):
         if i % 2 == 0:  # Show every other label to avoid crowding
-            ax1.text(epoch, acc + 1, f'{acc:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            ax1.text(epoch, min(acc + 1.5, 98), f'{acc:.1f}', ha='center', va='bottom', rotation=90, fontsize=9, fontweight='bold')
     
     # Plot (b) Ethnicity
     bars2 = ax2.bar(epoch_numbers[::10], ethnicity_accuracies[::10], color='steelblue', alpha=0.7, width=8)
@@ -638,10 +659,10 @@ def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accu
     ax2.set_ylim(0, 100)
     ax2.grid(True, alpha=0.3)
     
-    # Add percentage labels on top of bars (every 10th epoch)
+    # Add percentage labels rotated 90° just above each bar (every 10th epoch)
     for i, (epoch, acc) in enumerate(zip(epoch_numbers[::10], ethnicity_accuracies[::10])):
         if i % 2 == 0:  # Show every other label to avoid crowding
-            ax2.text(epoch, acc + 1, f'{acc:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            ax2.text(epoch, min(acc + 1.5, 98), f'{acc:.1f}', ha='center', va='bottom', rotation=90, fontsize=9, fontweight='bold')
     
     # Plot (c) Household Composition
     bars3 = ax3.bar(epoch_numbers[::10], household_composition_accuracies[::10], color='gold', alpha=0.7, width=8)
@@ -651,10 +672,10 @@ def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accu
     ax3.set_ylim(0, 100)
     ax3.grid(True, alpha=0.3)
     
-    # Add percentage labels on top of bars (every 10th epoch)
+    # Add percentage labels rotated 90° just above each bar (every 10th epoch)
     for i, (epoch, acc) in enumerate(zip(epoch_numbers[::10], household_composition_accuracies[::10])):
         if i % 2 == 0:  # Show every other label to avoid crowding
-            ax3.text(epoch, acc + 1, f'{acc:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            ax3.text(epoch, min(acc + 1.5, 98), f'{acc:.1f}', ha='center', va='bottom', rotation=90, fontsize=9, fontweight='bold')
     
     plt.tight_layout()
     
@@ -825,8 +846,11 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
     best_epoch_state = None
     
     # Early stopping
-    patience = 30
+    patience = 100
     patience_counter = 0
+    
+    # Track stopping epoch
+    stopping_epoch = num_epochs  # Default to max epochs if no early stopping
 
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
@@ -836,7 +860,14 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
         assignments = gumbel_softmax(logits, tau=tau, hard=False)
 
         total_loss, size_loss, religion_loss, ethnicity_loss, household_composition_loss = compute_loss(
-            assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0, household_composition_loss_weight=1.0
+            assignments,
+            household_sizes,
+            person_nodes,
+            household_nodes,
+            religion_loss_weight=1.0,
+            ethnicity_loss_weight=1.0,
+            size_loss_weight=2.0,
+            household_composition_loss_weight=2.0
         )
         total_loss.backward()
         
@@ -892,6 +923,7 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
             
         # Early stopping check
         if patience_counter >= patience:
+            stopping_epoch = epoch + 1
             print(f"\n    Early stopping at epoch {epoch+1} (no improvement for {patience} epochs)")
             break
         
@@ -942,7 +974,8 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
             'epoch_numbers': epoch_numbers.copy(),
             'religion_accuracies': religion_accuracies.copy(),
             'ethnicity_accuracies': ethnicity_accuracies.copy(),
-            'household_composition_accuracies': household_composition_accuracies.copy()
+            'household_composition_accuracies': household_composition_accuracies.copy(),
+            'stopping_epoch': stopping_epoch
         })
 
     # Clear model and intermediate tensors from GPU memory before returning
@@ -954,9 +987,9 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
     monitor_memory_usage(device, "after model cleanup")
     
     if return_detailed_results:
-        return best_epoch_loss, final_assignments, epoch_numbers, religion_accuracies, ethnicity_accuracies, convergence_data, final_accuracies
+        return best_epoch_loss, final_assignments, epoch_numbers, religion_accuracies, ethnicity_accuracies, convergence_data, final_accuracies, stopping_epoch
     else:
-        return best_epoch_loss, convergence_data, final_accuracies
+        return best_epoch_loss, convergence_data, final_accuracies, stopping_epoch
 
 # Perform grid search over hyperparameters
 total_start_time = time.time()
@@ -975,7 +1008,7 @@ try:
                 # Print GPU memory before training
                 monitor_memory_usage(device, "before training combination")
                 
-                final_loss, convergence_data, final_accuracies = train_model(learning_rate=lr, hidden_channels=hidden_dim)
+                final_loss, convergence_data, final_accuracies, stopping_epoch = train_model(learning_rate=lr, hidden_channels=hidden_dim)
                 
                 combination_end_time = time.time()
                 combination_training_time = combination_end_time - combination_start_time
@@ -997,7 +1030,8 @@ try:
                     'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
                     'size_distribution_accuracy': final_accuracies['size_distribution_accuracy'],
                     'overall_accuracy': final_accuracies['overall_accuracy'],
-                    'training_time': combination_training_time_str
+                    'training_time': combination_training_time_str,
+                    'stopping_epoch': stopping_epoch
                 })
                 
                 # Store detailed results
@@ -1018,7 +1052,8 @@ try:
                     'area_code': selected_area_code,
                     'num_persons': num_persons,
                     'num_households': household_sizes.size(0),
-                    'num_epochs': num_epochs
+                    'num_epochs': num_epochs,
+                    'stopping_epoch': stopping_epoch
                 })
                 
                 # Store convergence data with hyperparameter info
@@ -1040,7 +1075,8 @@ try:
                         'religion_compliance': final_accuracies['religion_compliance'],
                         'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
                         'size_distribution_accuracy': final_accuracies['size_distribution_accuracy'],
-                        'overall_accuracy': final_accuracies['overall_accuracy']
+                        'overall_accuracy': final_accuracies['overall_accuracy'],
+                        'stopping_epoch': stopping_epoch
                     }
                 
                 # Clear memory between combinations
@@ -1086,7 +1122,8 @@ else:
         'religion_compliance': 0.0,
         'ethnicity_compliance': 0.0,
         'size_distribution_accuracy': 0.0,
-        'overall_accuracy': 0.0
+        'overall_accuracy': 0.0,
+        'stopping_epoch': 0
     }
     best_loss = float('inf')
 
@@ -1096,6 +1133,14 @@ print(f"\nSaving hyperparameter tuning results to: {output_dir}")
 # Save basic results as CSV
 if hp_results:
     hp_results_df = pd.DataFrame(hp_results)
+    # Mark the best hyperparameter combination
+    if best_model_info.get('lr') is not None and best_model_info.get('hidden_channels') is not None:
+        hp_results_df['is_best'] = (
+            (hp_results_df['learning_rate'] == best_model_info['lr']) &
+            (hp_results_df['hidden_channels'] == best_model_info['hidden_channels'])
+        )
+    else:
+        hp_results_df['is_best'] = False
     hp_results_path = os.path.join(output_dir, 'hp_tuning_results.csv')
     hp_results_df.to_csv(hp_results_path, index=False)
     print(f"Basic results saved: {hp_results_path}")
@@ -1145,7 +1190,8 @@ performance_summary = {
     'best_religion_compliance': best_params.get('religion_compliance', 0.0),
     'best_ethnicity_compliance': best_params.get('ethnicity_compliance', 0.0),
     'best_size_distribution_accuracy': best_params.get('size_distribution_accuracy', 0.0),
-    'best_overall_accuracy': best_params.get('overall_accuracy', 0.0)
+    'best_overall_accuracy': best_params.get('overall_accuracy', 0.0),
+    'best_stopping_epoch': best_params.get('stopping_epoch', 0)
 }
 
 performance_summary_path = os.path.join(output_dir, 'performance_summary.json')
@@ -1163,6 +1209,7 @@ best_params_with_loss['ethnicity_accuracy_percent'] = best_params.get('ethnicity
 best_params_with_loss['size_distribution_accuracy_percent'] = best_params.get('size_distribution_accuracy', 0.0) * 100
 best_params_with_loss['overall_accuracy_percent'] = best_params.get('overall_accuracy', 0.0) * 100
 best_params_with_loss['total_training_time'] = total_training_time_str
+best_params_with_loss['stopping_epoch'] = best_params.get('stopping_epoch', 0)
 
 best_params_path = os.path.join(output_dir, 'best_hyperparameters.json')
 with open(best_params_path, 'w') as f:
@@ -1239,6 +1286,7 @@ if best_model_info['model_state'] is not None:
     print(f"  Learning Rate: {best_model_info['lr']}")
     print(f"  Hidden Channels: {best_model_info['hidden_channels']}")
     print(f"  Final Loss: {best_model_info['loss']:.6f}")
+    print(f"  Stopping Epoch: {best_model_info.get('stopping_epoch', 'N/A')}")
     print(f"  Religion Compliance: {final_accuracies['religion_compliance'] * 100:.2f}%")
     print(f"  Ethnicity Compliance: {final_accuracies['ethnicity_compliance'] * 100:.2f}%")
     print(f"  Household Composition Compliance: {final_accuracies['household_composition_compliance'] * 100:.2f}%")

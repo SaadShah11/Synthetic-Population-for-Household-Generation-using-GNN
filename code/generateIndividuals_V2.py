@@ -200,7 +200,8 @@ marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/prepro
 qualification_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/QualificationBySexByAgeModified.csv'))
 # household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Adjusted.csv'))
 # household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified.csv'))
-household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified.csv'))
+# household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified.csv'))
+household_composition_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_age_by_sex_Main_Modified_Smoothed.csv'))
 # ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge_sorted.csv'))
 # religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge_sorted.csv'))
 # marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified_sorted.csv'))
@@ -500,10 +501,10 @@ def calculate_rmse(generated_counts, target_counts):
     return np.sqrt(mse)
 
 # Define the hyperparameters to tune
-# learning_rates = [0.001, 0.0005, 0.0001]
-learning_rates = [0.001]
-hidden_channel_options = [256]
-# hidden_channel_options = [64, 128, 256]
+learning_rates = [0.001, 0.0005, 0.0001]
+# learning_rates = [0.001]
+# hidden_channel_options = [256]
+hidden_channel_options = [64, 128, 256]
 mlp_hidden_dim = 256
 # mlp_hidden_dim = 128
 num_epochs = 3000  # Increased epochs for better household composition learning
@@ -1015,6 +1016,28 @@ marital_pred_names = [marital_categories[i] for i in marital_pred.cpu().numpy()]
 qualification_pred_names = [qualification_categories[i] for i in qualification_pred.cpu().numpy()]
 household_composition_pred_names = [household_composition_categories[i] for i in household_composition_pred.cpu().numpy()]
 
+# Save a human-readable table of generated individuals and print a sample
+generated_individuals_df = pd.DataFrame({
+    'person_id': np.arange(num_persons),
+    'age': age_pred_names,
+    'sex': sex_pred_names,
+    'religion': religion_pred_names,
+    'ethnicity': ethnicity_pred_names,
+    'marital': marital_pred_names,
+    'qualification': qualification_pred_names,
+    'household_composition': household_composition_pred_names
+})
+
+gen_individuals_csv = os.path.join(output_dir, 'generated_individuals.csv')
+generated_individuals_df.to_csv(gen_individuals_csv, index=False)
+print(f"Saved generated individuals table to: {gen_individuals_csv}")
+
+print("\nSample of generated individuals (first 20):")
+print(generated_individuals_df.head(20).to_string(index=False))
+
+print("\nHousehold composition distribution among individuals (counts):")
+print(generated_individuals_df['household_composition'].value_counts().sort_index())
+
 # Calculate actual distributions
 sex_actual = {}
 age_actual = {}
@@ -1455,9 +1478,16 @@ def plotly_crosstable_comparison(
         subplot_titles=all_titles,
         specs=specs,
         row_heights=row_heights,
-        vertical_spacing=0.10,  # Further increased vertical spacing between crosstable subplots for label clearance
+        vertical_spacing=0.05,  # Further increased vertical spacing between crosstable subplots for label clearance
         horizontal_spacing=0.10
     )
+
+    # Enlarge and bold subplot titles to improve readability
+    if hasattr(fig.layout, 'annotations') and fig.layout.annotations:
+        for ann in fig.layout.annotations:
+            if ann.text:
+                ann.text = f"<b>{ann.text}</b>"
+                ann.font.size = 16
     
     for idx, crosstable_key in enumerate(keys_list):
         row = (idx // num_cols) + 2  # +2 because first row (index 1) is for geo/legend
@@ -1520,13 +1550,29 @@ def plotly_crosstable_comparison(
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
         
-        # Update x-axis to show index numbers
+        # Adaptive x-axis labeling: skip labels when there are many points
+        num_points = len(continuous_positions)
+        if num_points > 500:
+            step_size = 4
+        elif num_points > 300:
+            step_size = 3
+        elif num_points > 100:
+            step_size = 2
+        # elif num_points > 40:
+        #     step_size = 3
+        # elif num_points > 20:
+        #     step_size = 2
+        else:
+            step_size = 1
+
+        visible_positions = [p for p in continuous_positions if (p - 1) % step_size == 0]
+        visible_labels = [str(p) for p in visible_positions]
+
         fig.update_xaxes(
             ticktext=visible_labels,
             tickvals=visible_positions,
             tickangle=90,  # 90-degree angle for index numbers
-            tickfont=dict(size=10),  # Standard font size for index numbers
-            # title_text=titles[idx],  # Add x-axis title as the crosstable name
+            tickfont=dict(size=14),  # Larger font for readability
             row=row,
             col=col
         )
@@ -1593,7 +1639,8 @@ def plotly_crosstable_comparison(
         tickwidth=2,
         showline=True,
         linecolor='black',
-        linewidth=2
+        linewidth=2,
+        tickfont=dict(size=14)
     )
     
     # Add x-axis line styling without overriding tick settings

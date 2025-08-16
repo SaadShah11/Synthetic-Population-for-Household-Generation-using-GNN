@@ -478,7 +478,7 @@ targets.append(
 
 # Hyperparameter Tuning
 # learning_rates = [0.001, 0.0005, 0.0001]
-learning_rates = [0.001]
+learning_rates = [0.005]
 hidden_channel_options = [256]
 # hidden_channel_options = [64, 128, 256]
 mlp_hidden_dim = 256
@@ -1133,6 +1133,27 @@ tenure_pred_names = [tenure_categories[i] for i in tenure_pred_indices]
 size_pred_names = [size_categories[i] for i in size_pred_indices]
 rooms_pred_names = [rooms_categories[i] for i in rooms_pred_indices]
 
+# Save a human-readable table of generated households and print a sample
+generated_households_df = pd.DataFrame({
+    'household_id': np.arange(num_households),
+    'composition': hh_comp_pred_names,
+    'ethnicity': ethnicity_pred_names,
+    'religion': religion_pred_names,
+    'tenure': tenure_pred_names,
+    'size': size_pred_names,
+    'rooms': rooms_pred_names
+})
+
+gen_households_csv = os.path.join(output_dir, 'generated_households.csv')
+generated_households_df.to_csv(gen_households_csv, index=False)
+print(f"Saved generated households table to: {gen_households_csv}")
+
+print("\nSample of generated households (first 20):")
+print(generated_households_df.head(20).to_string(index=False))
+
+print("\nHousehold composition distribution (counts):")
+print(generated_households_df['composition'].value_counts().sort_index())
+
 # Calculate counts of actual categories from the original data
 hh_comp_actual = {}
 for hh_comp in hh_compositions:
@@ -1529,9 +1550,16 @@ def plotly_crosstable_comparison(
         subplot_titles=all_titles,
         specs=specs,
         # row_heights=row_heights, - COMMENTED OUT
-        vertical_spacing=0.20,  # Significantly increased vertical spacing for better subplot separation
+        vertical_spacing=0.10,  # Significantly increased vertical spacing for better subplot separation
         horizontal_spacing=0.20  # Increased horizontal spacing for better subplot separation
     )
+
+    # Make subplot titles larger and bold for readability
+    if hasattr(fig.layout, 'annotations') and fig.layout.annotations:
+        for ann in fig.layout.annotations:
+            if ann.text:
+                ann.text = f"<b>{ann.text}</b>"
+                ann.font.size = 16
     
     for idx, crosstable_key in enumerate(keys_list):
         # row = (idx // num_cols) + 2  # +2 because first row (index 1) is for geo/legend - COMMENTED OUT
@@ -1599,7 +1627,7 @@ def plotly_crosstable_comparison(
             ticktext=visible_labels,
             tickvals=visible_positions,
             tickangle=90,  # 90-degree angle for index numbers
-            tickfont=dict(size=10),  # Standard font size for index numbers
+            tickfont=dict(size=14),  # Larger font size for index numbers
             # title_text=titles[idx],  # Add x-axis title as the crosstable name
             row=row,
             col=col
@@ -1667,7 +1695,8 @@ def plotly_crosstable_comparison(
         tickwidth=2,
         showline=True,
         linecolor='black',
-        linewidth=2
+        linewidth=2,
+        tickfont=dict(size=14)
     )
     
     # Add x-axis line styling without overriding tick settings

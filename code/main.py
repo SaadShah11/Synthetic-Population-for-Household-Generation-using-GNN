@@ -22,15 +22,15 @@ ALL_OXFORD_AREAS = [
 SCRIPT_OPTIONS = {
     '1': {
         'name': 'Person/Individual Generation',
-        'script': 'generateIndividuals.py',
-        # 'script': 'generatedIndividuals_V4.py',
+        # 'script': 'generateIndividuals.py',
+        'script': 'generateIndividuals_V2.py',
         'description': 'Generate synthetic individuals with demographic attributes',
         'requires_area': True
     },
     '2': {
         'name': 'Household Generation', 
-        'script': 'generateHouseholds.py',
-        # 'script': 'generatedHouseholds_V3.py',
+        # 'script': 'generateHouseholds.py',
+        'script': 'generateHouseholds_V2.py',
         'description': 'Generate synthetic households with composition and characteristics',
         'requires_area': True
     },
