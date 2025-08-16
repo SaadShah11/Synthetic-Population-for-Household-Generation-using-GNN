@@ -1,0 +1,17 @@
+{
+    "learning_rate": null,
+    "hidden_channels": null,
+    "religion_compliance": 0.0,
+    "ethnicity_compliance": 0.0,
+    "size_distribution_accuracy": 0.0,
+    "overall_accuracy": 0.0,
+    "stopping_epoch": 0,
+    "best_loss": Infinity,
+    "total_combinations": 0,
+    "area_code": "E02005947",
+    "religion_accuracy_percent": 0.0,
+    "ethnicity_accuracy_percent": 0.0,
+    "size_distribution_accuracy_percent": 0.0,
+    "overall_accuracy_percent": 0.0,
+    "total_training_time": "0:00:11"
+}

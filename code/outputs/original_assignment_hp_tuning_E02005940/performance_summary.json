@@ -1,0 +1,32 @@
+{
+    "area_code": "E02005940",
+    "num_persons": 5866,
+    "num_households": 2593,
+    "total_combinations_tested": 1,
+    "total_training_time_seconds": 1045.062551021576,
+    "total_training_time_str": "0:17:25",
+    "num_epochs_per_combination": 200,
+    "learning_rates_tested": [
+        0.001
+    ],
+    "hidden_dims_tested": [
+        64
+    ],
+    "best_learning_rate": 0.001,
+    "best_hidden_channels": 64,
+    "best_loss": 2.653449535369873,
+    "best_religion_compliance": 0.9031708148653256,
+    "best_ethnicity_compliance": 0.8936242754858507,
+    "best_size_distribution_accuracy": 0.6919949650764465,
+    "best_overall_accuracy": 0.8295966851425409,
+    "enhanced_edge_creation": true,
+    "edge_matching_attributes": [
+        "age",
+        "sex",
+        "religion",
+        "ethnicity",
+        "marital_status"
+    ],
+    "age_matching_threshold": 10.0,
+    "matching_logic": "OR (any attribute match creates edge)"
+}

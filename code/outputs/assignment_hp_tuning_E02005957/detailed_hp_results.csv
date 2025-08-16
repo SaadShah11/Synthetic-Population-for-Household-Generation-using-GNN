@@ -1,0 +1,2 @@
+learning_rate,hidden_channels,final_loss,religion_compliance,ethnicity_compliance,size_distribution_accuracy,overall_accuracy,religion_accuracy_percent,ethnicity_accuracy_percent,size_distribution_accuracy_percent,overall_accuracy_percent,training_time_seconds,training_time_str,area_code,num_persons,num_households,num_epochs,stopping_epoch
+0.005,256,3.9826385974884033,0.8920282542885973,0.8409975493729278,0.797932505607605,0.838628290017297,89.20282542885974,84.09975493729279,79.7932505607605,83.8628290017297,8262.356837272644,2:17:42,E02005957,6937,2692,400,400

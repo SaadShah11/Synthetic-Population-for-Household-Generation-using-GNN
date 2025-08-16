@@ -1,0 +1,2 @@
+learning_rate,hidden_channels,final_loss,religion_compliance,ethnicity_compliance,size_distribution_accuracy,overall_accuracy,training_time,stopping_epoch,is_best
+0.005,256,4.521073341369629,0.8702409810352203,0.7876800228147726,0.8303848505020142,0.8251279394186021,1:43:45,400,True

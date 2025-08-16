@@ -1,0 +1,23 @@
+{
+    "area_code": "E02005950",
+    "num_persons": 11282,
+    "num_households": 4080,
+    "total_combinations_tested": 1,
+    "total_training_time_seconds": 4224.883395433426,
+    "total_training_time_str": "1:10:24",
+    "num_epochs_per_combination": 400,
+    "learning_rates_tested": [
+        0.005
+    ],
+    "hidden_dims_tested": [
+        64
+    ],
+    "best_learning_rate": 0.005,
+    "best_hidden_channels": 64,
+    "best_loss": 4.183164119720459,
+    "best_religion_compliance": 0.8680198546357029,
+    "best_ethnicity_compliance": 0.7756603439106542,
+    "best_size_distribution_accuracy": 0.8535611629486084,
+    "best_overall_accuracy": 0.8318754883971414,
+    "best_stopping_epoch": 400
+}

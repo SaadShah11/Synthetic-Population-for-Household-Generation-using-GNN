@@ -1,0 +1,2 @@
+learning_rate,hidden_channels,final_loss,final_accuracy,training_time,use_weighted_loss,use_focal_loss
+0.001,256,5.046486854553223,0.7435981869697571,0:01:08,True,True

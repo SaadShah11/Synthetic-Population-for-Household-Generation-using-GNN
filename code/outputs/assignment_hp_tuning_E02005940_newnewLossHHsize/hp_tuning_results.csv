@@ -1,0 +1,2 @@
+learning_rate,hidden_channels,final_loss,religion_compliance,ethnicity_compliance,size_distribution_accuracy,overall_accuracy,training_time
+0.005,256,2.5759639739990234,0.9069212410501193,0.8973747016706444,0.7392657995223999,0.7839470329013978,1:05:47
