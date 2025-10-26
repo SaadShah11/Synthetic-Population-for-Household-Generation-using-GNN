@@ -172,32 +172,54 @@ def process_household_composition_by_age_sex(hh_comp_df, age_df, household_compo
                 
                 new_df[target_col] = new_values
     
-    print("Distributing missing values...")
-    
-    # Distribute missing values to first 5 categories for adult age groups - vectorized
-    first_5_categories = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-2C']
-    adult_age_groups = ['20_24', '25_29', '30_34', '35_39', '40_44', '45_49', '50_54', '55_59', '60_64', '65_69', '70_74', '75_79', '80_84', '85+']
-    
-    # Calculate missing values per distribution - vectorized
-    total_distributions = len(first_5_categories) * len(adult_age_groups) * 2  # 2 sexes
-    missing_per_distribution = merged_df['missing_values'] // total_distributions
-    remainder = merged_df['missing_values'] % total_distributions
-    
-    # Create a list of all target columns for missing value distribution
-    missing_value_targets = []
-    for hh_comp in first_5_categories:
+    print("Distributing missing values with smoothed proportions across feasible HH comps...")
+    alpha = 1.0  # smoothing strength; tune 0.5–3.0 if needed
+
+    # Pre-build per-age feasible column lists per sex
+    feasible_cols_per_sex_age = {
+        (sex, age): [f"{sex} {age} {hh}" for hh in household_composition_codes if hh in age_group_rules[age]]
+        for sex in ['M', 'F'] for age in target_age_groups
+    }
+
+    # Loop per area to allocate integer missing counts by largest-remainder method
+    for idx, row in merged_df.iterrows():
+        missing = int(row['missing_values'])
+        if missing <= 0:
+            continue
+
+        # Build weights from current allocations + alpha over all feasible cells
+        cols = []
+        weights = []
         for sex in ['M', 'F']:
-            for age_group in adult_age_groups:
-                if hh_comp in age_group_rules[age_group]:
-                    col_name = f"{sex} {age_group} {hh_comp}"
-                    missing_value_targets.append(col_name)
-    
-    # Add missing values to all target columns at once
-    for col_name in missing_value_targets:
-        new_df[col_name] += missing_per_distribution
-    
-    # Add remainder to the first category
-    new_df['M 20_24 1PE'] += remainder
+            for age in target_age_groups:
+                c_list = feasible_cols_per_sex_age[(sex, age)]
+                for col in c_list:
+                    cols.append(col)
+                    base = int(new_df.loc[idx, col]) if col in new_df.columns else 0
+                    weights.append(base + alpha)
+
+        weights = np.array(weights, dtype=float)
+        total_w = weights.sum()
+        if total_w <= 0:
+            # Uniform allocation over feasible cells if no base mass
+            weights = np.ones_like(weights)
+            total_w = weights.sum()
+
+        # Compute fractional allocations
+        exact = missing * (weights / total_w)
+        floors = np.floor(exact).astype(int)
+        remainder = missing - int(floors.sum())
+
+        if remainder > 0:
+            residuals = exact - floors
+            top_idx = np.argpartition(-residuals, remainder - 1)[:remainder]
+            floors[top_idx] += 1
+
+        # Apply integer allocations
+        for j, col in enumerate(cols):
+            if floors[j] == 0:
+                continue
+            new_df.loc[idx, col] += int(floors[j])
     
     # Verify totals match - vectorized
     print("Verifying totals...")
@@ -210,37 +232,39 @@ def process_household_composition_by_age_sex(hh_comp_df, age_df, household_compo
         print(f"Found {len(discrepancies)} areas with total discrepancies:")
         for idx, row in discrepancies.head(5).iterrows():
             print(f"Area {row['geography code']}: Expected {row['total']}, Got {row['calculated_total']}")
-        
-        # Fix discrepancies by distributing equally to first 5 categories - vectorized
-        first_5_categories = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-2C']
-        
-        # Create a list of all valid columns for the first 5 categories
-        valid_columns_for_discrepancy = []
-        for hh_comp in first_5_categories:
+
+        # Fix discrepancies by proportional top-up across all feasible cells using smoothed weights
+        for r_idx, r in discrepancies.iterrows():
+            diff = int(r['total'] - r['calculated_total'])
+            if diff == 0:
+                continue
+
+            cols = []
+            weights = []
             for sex in ['M', 'F']:
-                for age_group in target_age_groups:
-                    if hh_comp in age_group_rules[age_group]:
-                        col_name = f"{sex} {age_group} {hh_comp}"
-                        valid_columns_for_discrepancy.append(col_name)
-        
-        # Calculate additional values per column
-        total_valid_cols = len(valid_columns_for_discrepancy)
-        
-        if total_valid_cols > 0:
-            # Calculate additional values for each area with discrepancy
-            for idx, row in discrepancies.iterrows():
-                diff = row['total'] - row['calculated_total']
-                if diff != 0:
-                    additional_per_col = diff // total_valid_cols
-                    remainder = diff % total_valid_cols
-                    
-                    # Add to all valid columns
-                    for col_name in valid_columns_for_discrepancy:
-                        new_df.loc[idx, col_name] += additional_per_col
-                    
-                    # Add remainder to the first column
-                    if remainder > 0:
-                        new_df.loc[idx, valid_columns_for_discrepancy[0]] += remainder
+                for age in target_age_groups:
+                    c_list = feasible_cols_per_sex_age[(sex, age)]
+                    for col in c_list:
+                        cols.append(col)
+                        base = int(new_df.loc[r_idx, col]) if col in new_df.columns else 0
+                        weights.append(base + alpha)
+
+            weights = np.array(weights, dtype=float)
+            if weights.sum() <= 0:
+                weights = np.ones_like(weights)
+
+            exact = diff * (weights / weights.sum())
+            floors = np.floor(exact).astype(int)
+            remainder = diff - int(floors.sum())
+            if remainder > 0:
+                residuals = exact - floors
+                top_idx = np.argpartition(-residuals, remainder - 1)[:remainder]
+                floors[top_idx] += 1
+
+            for j, col in enumerate(cols):
+                if floors[j] == 0:
+                    continue
+                new_df.loc[r_idx, col] += int(floors[j])
     
     # Remove the calculated_total column before saving
     new_df = new_df.drop('calculated_total', axis=1)
